@@ -1,6 +1,28 @@
 This repository contains the official implementation for the ICML 2025 paper [Measuring In-Context Computation Complexity via Hidden State Prediction](https://arxiv.org/abs/2503.13431).
 
-We introduce the PHi loss, a metric to quantify the "interestingness" of computation in neural sequence models by measuring the predictability of their hidden states. This code allows you to train models with the PHi layer and reproduce the key findings from our paper.
+We introduce the PHi (**P**rediction of **Hi**dden states) loss, a metric to quantify the "interestingness" of computation in neural sequence models by measuring the predictability of their hidden states. 
+It can also be interpreted as the information gain at each sequence step.
+This code allows you to train models with the PHi layer and reproduce the key findings from our paper.
+
+A PHi layer can be inserted into any neural sequence model, such as Transformers or LSTMs, trained from scratch or pre-trained (we demonstrate this with Llama 3.2 3B).
+It inserts an information bottleneck into the main pathway of the model, allowing to quantify the predictability of the hidden states at each sequence step.
+
+![](assets/PHi_layer.png)
+
+## Main Findings:
+
+- Interesting task like in-context learning, or modeling code and literature, lead to high PHi loss.
+  Boring tasks like retrieving memorized sequence or modeling random structureless data, lead to low PHi loss.
+  For next token prediction loss, there is no clear relationship to task interestingness.
+
+  ![](assets/PHi_vs_next_token_loss.png)
+- There is a strong correlation between PHi loss and the amount of in-context computation required by the model to solve the task.
+
+  ![](assets/pfa_tokenwise_PHi.png)
+- For LLM-generated rationales for mathematical reasoning tasks, high PHi loss is predictive of correct solutions. 
+  This is especially pronounced for difficult problems.
+
+  ![](assets/MATH_PHi_correctness.png)
 
 ### Prerequisites:
 - Python 3.10+
