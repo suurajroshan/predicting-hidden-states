@@ -5,8 +5,8 @@ We introduce the PHi loss, a metric to quantify the "interestingness" of computa
 ### Prerequisites:
 - Python 3.10+
 - PyTorch 2.1+
-- A [WandB](wandb.ai) account for experiment tracking (optional)
-- A [huggingface](huggingface.co) account for downloading datasets and checkpoints
+- A [WandB](https://wandb.ai) account for experiment tracking (optional)
+- A [huggingface](https://huggingface.co) account for downloading datasets and checkpoints
 - A single GPU with at least 24GB of memory (e.g., NVIDIA RTX 3090/4090).
 
 ## Installation
