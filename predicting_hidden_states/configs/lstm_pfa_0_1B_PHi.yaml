@@ -1,0 +1,135 @@
+# ----------------------------------------------------------------------------------
+# General Run and Environment Settings
+# ----------------------------------------------------------------------------------
+device: cuda
+dtype: bf16 # Use bfloat16 for training
+seed: null # Set to an integer for reproducible runs
+compile: true # Whether to compile the model with torch.compile
+
+# ----------------------------------------------------------------------------------
+# Model and Tokenizer Configuration
+# ----------------------------------------------------------------------------------
+model:
+  _component_: models.lstm_ascii_self_prediction
+  # PHi (Self-Prediction) Layer Configuration
+  # These parameters configure the PHi layer integrated into the model
+  use_self_prediction: true # Master switch to enable the PHi layer and its losses
+  self_prediction_layer: 0 # Layer index *after which* the PHi layer is inserted
+
+  # Loss weights for the PHi mechanism
+  phi_loss_factor: 1.0
+  self_critic_loss_factor: 0.1
+
+  # PHi layer architecture and behavior
+  use_self_attention: true # Whether the PHi prior uses self-attention
+  detach_hidden_states: false # If true, detaches hidden states before the PHi layer
+  detach_targets: false # If true, detaches the posterior targets for the PHi loss
+
+  # PHi layer behavior during training and inference
+  deterministic_at_inference: true # If true, use the mean of the posterior instead of sampling at inference
+  chance_to_deterministic: 0.0 # Probability of using deterministic sampling during training
+train_from_scratch: true # If true, initializes a new model instead of loading a checkpoint
+
+# Tokenizer configuration
+tokenizer:
+  _component_: models.ascii_tokenizer
+  max_seq_len: 2048
+
+# ----------------------------------------------------------------------------------
+# Dataset and Dataloader
+# ----------------------------------------------------------------------------------
+dataset:
+  _component_: dataset_classes.learning_levels_pfa_dataset
+  # On-the-fly packing concatenates samples into sequences of a fixed length
+  packed_on_the_fly: true
+  packed_sequence_length: 2048
+  split_across_pack: false
+  # PFA settings
+  fixed_seed: 123
+  token_perturbation_rate: 0.2
+  word_perturbation_rate: 0.5
+  included_learning_levels: [ 0, 1, 2, 3, 4 ]
+  max_num_languages_per_sample: 1
+  seq_len_min: 10
+  seq_len_max: 50
+  num_states_min: 3
+  num_states_max: 12
+  sequences_per_language_min: 10
+  sequences_per_language_max: 20
+  shuffle_random_sequences: False
+  num_workers: 0
+shuffle: true # Whether to shuffle the dataset
+batch_size: 16
+
+# ----------------------------------------------------------------------------------
+# Training and Optimization
+# ----------------------------------------------------------------------------------
+# Training loop settings
+epochs: 1000
+max_total_steps: 30000 # Stop training after this many global steps
+max_steps_per_epoch: null # Optional: limit steps per epoch
+
+# Training mode
+train_whole_model: true # If false, freezes the base model and only trains the PHi layer
+ignore_main_training_loss: false # If true, trains only on PHi loss, ignoring next-token loss
+
+# Optimizer (AdamW)
+optimizer:
+  _component_: torch.optim.AdamW
+  fused: true
+  lr: 3e-4
+
+# Learning rate scheduler
+lr_scheduler:
+  _component_: modules.get_constant_schedule_with_warmup
+  num_warmup_steps: 500
+
+# Main loss function for next-token prediction
+loss:
+  _component_: torchtune.modules.loss.CEWithChunkedOutputLoss
+
+# Gradient management
+gradient_accumulation_steps: 1
+clip_grad_norm: 1.0
+
+# ----------------------------------------------------------------------------------
+# Memory Management
+# ----------------------------------------------------------------------------------
+# FSDP settings
+fsdp_cpu_offload: false
+custom_sharded_layers: ['tok_embeddings', 'output']
+
+# Activation checkpointing to save memory
+enable_activation_checkpointing: false
+
+# ----------------------------------------------------------------------------------
+# Checkpointing and Resuming
+# ----------------------------------------------------------------------------------
+checkpointer:
+  _component_: utils.checkpointer.FullModelTorchTuneCheckpointer
+  checkpoint_dir: checkpoints/Llama-3.2-3B-Instruct
+  recipe_checkpoint: null
+  output_dir: checkpoints/lstm_pfa_0_1B_PHi_after_layer_0/
+  # output_dir: checkpoints/lstm_pfa_0_1B_PHi_$WANDB_RUN_ID/
+  model_type: IDSIA
+
+resume_from_checkpoint: false
+checkpoint_every_n_steps: 1000
+overwrite_checkpoints: true # If true, only the latest checkpoint is kept
+save_optimizer_state: false # Whether to save optimizer state in checkpoints
+
+# ----------------------------------------------------------------------------------
+# Evaluation and Logging
+# ----------------------------------------------------------------------------------
+evaluate_every_n_steps: 500
+
+# Logging configuration
+output_dir: /tmp/self-prediction # Fallback output directory
+log_every_n_steps: 1
+log_peak_memory_stats: false
+
+metric_logger:
+  _component_: torchtune.training.metric_logging.WandBLogger
+  # _component_: torchtune.training.metric_logging.DiskLogger  # use this if wandb is not installed
+  project: self_prediction
+  log_dir: ${output_dir}
