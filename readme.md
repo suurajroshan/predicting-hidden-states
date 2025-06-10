@@ -12,15 +12,16 @@ It inserts an information bottleneck into the main pathway of the model, allowin
 ## Main Findings:
 
 - Interesting task like in-context learning, or modeling code and literature, lead to high PHi loss.
-  Boring tasks like retrieving memorized sequence or modeling random structureless data, lead to low PHi loss.
+  Trivial or boring tasks like retrieving memorized sequence or modeling random structureless data, lead to low PHi loss.
   For next token prediction loss, there is no clear relationship to task interestingness.
 
   <img src="assets/PHi_vs_next_token_loss.png" width="400">
-- There is a strong correlation between PHi loss and the amount of in-context computation required by the model to solve the task.
+- There is a strong correlation between PHi loss and the amount of in-context computation required by the model to solve the task, even when controlling for the next token prediction loss.
 
   <img src="assets/pfa_tokenwise_PHi.png" width="400">
 - For LLM-generated rationales for mathematical reasoning tasks, high PHi loss is predictive of correct solutions. 
-  This is especially pronounced for difficult problems.
+  This is especially pronounced for difficult problems. 
+  The intuition is that difficult problems require interesting solutions. More details in the paper.
 
   <img src="assets/MATH_PHi_correctness.png" width="400">
 
