@@ -11,7 +11,7 @@ It inserts an information bottleneck into the main pathway of the model, allowin
 
 ## Main Findings:
 
-- Interesting task like in-context learning, or modeling code and literature, lead to high PHi loss.
+- Interesting tasks like in-context learning, or modeling code and literature, lead to high PHi loss.
   Trivial or boring tasks like retrieving memorized sequence or modeling random structureless data, lead to low PHi loss.
   For next token prediction loss, there is no clear relationship to task interestingness.
 
