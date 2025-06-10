@@ -63,7 +63,9 @@ tune run training.py --config configs/lstm_pfa_0_1B_PHi.yaml
 
 ### Pre-trained LLM (Llama 3.2 3B)
 
-Train a PHi layer inserted into a pre-trained, instruction-tuned Llama 3.2 3B model. The base model weights are frozen.
+Train a PHi layer inserted into a pre-trained, instruction-tuned Llama 3.2 3B model. 
+The base model weights are frozen. 
+For convenience, we include the [GSM-8k](https://github.com/openai/grade-school-math) and [MATH](https://github.com/hendrycks/math) datasets in the repository.
 
 ```bash
 tune run training.py --config configs/llama_3_2_3B_PHi.yaml
