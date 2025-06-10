@@ -1,0 +1,68 @@
+This repository contains the official implementation for the ICML 2025 paper [Measuring In-Context Computation Complexity via Hidden State Prediction](https://arxiv.org/abs/2503.13431).
+
+We introduce the PHi loss, a metric to quantify the "interestingness" of computation in neural sequence models by measuring the predictability of their hidden states. This code allows you to train models with the PHi layer and reproduce the key findings from our paper.
+
+### Prerequisites:
+- Python 3.10+
+- PyTorch 2.1+
+- A [WandB](wandb.ai) account for experiment tracking (optional)
+- A [huggingface](huggingface.co) account for downloading datasets and checkpoints
+- A single GPU with at least 24GB of memory (e.g., NVIDIA RTX 3090/4090).
+
+## Installation
+
+1. Clone the repository:
+```Bash
+git clone https://github.com/your-username/self-predicting-models.git
+cd self-predicting-models
+```
+
+2. Install the required dependencies. The code uses torchtune for efficient training.
+```Bash
+pip install -r requirements.txt
+```
+
+## Training
+
+We provide configuration files to replicate the main experiments in the paper. Necessary datasets and checkpoints are downloaded automatically from Hugging Face.
+
+### Specialized Models (From Scratch)
+
+Train a 12-layer Transformer (0.1B parameters) on the in-context language learning task:
+```bash
+tune run training.py --config configs/transformer_pfa_0_1B_PHi.yaml
+```
+
+Train a 2-layer LSTM (0.1B parameters) on the same task:
+```bash
+tune run training.py --config configs/lstm_pfa_0_1B_PHi.yaml
+```
+
+### Pre-trained LLM (Llama 3.2 3B)
+
+Train a PHi layer inserted into a pre-trained, instruction-tuned Llama 3.2 3B model. The base model weights are frozen.
+
+```bash
+tune run training.py --config configs/llama_3_2_3B_PHi.yaml
+```
+
+For a quick testing and debugging, use the training script:
+```bash
+python training_script.py
+```
+
+## Citation
+
+If you use this code or our findings in your research, please cite our paper:
+```bibtex
+@misc{herrmann2025measuring,
+  title={Measuring In-Context Computation Complexity via Hidden State Prediction},
+  author={Herrmann, Vincent and Csord{\'a}s, R{\'o}bert and Schmidhuber, J{\"u}rgen},
+  year={2025},
+  eprint={2503.13431},
+  archivePrefix={arXiv},
+  primaryClass={cs.LG},
+  url={https://arxiv.org/abs/2503.13431}, 
+}
+```
+
