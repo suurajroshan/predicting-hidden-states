@@ -28,7 +28,7 @@ Adapting the code to work with other models or datasets should be straightforwar
 
 ### Prerequisites:
 - Python 3.10+
-- PyTorch 2.1+
+- PyTorch 2.4+
 - A [WandB](https://wandb.ai) account for experiment tracking (optional)
 - A [huggingface](https://huggingface.co) account for downloading datasets and checkpoints. 
   For the LLM experiments, you need to approve the [Llama 3.2 license](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct) to access the model weights.
