@@ -13,14 +13,14 @@ def main():
 
     multiprocessing.set_start_method("spawn", force=True)
 
-    cfg = OmegaConf.load("configs/llama_3B_PHi.yaml")
+    cfg = OmegaConf.load("configs/llama_0.1B_PHi.yaml")
     # cfg = OmegaConf.load("configs/transformer_pfa_0_1B_PHi.yaml")
     # cfg = OmegaConf.load("configs/lstm_pfa_0_1B_PHi.yaml")
 
     cfg.evaluate_every_n_steps = 10
     cfg.checkpoint_every_n_steps = 20
     cfg.compile = False
-    cfg.metric_logger._component_ = "torchtune.training.metric_logging.DiskLogger"
+    # cfg.metric_logger._component_ = "torchtune.training.metric_logging.DiskLogger"
 
     recipe = SelfPredictionTrainingRecipeDistributed(cfg=cfg)
     recipe.setup(cfg=cfg)

@@ -25,11 +25,15 @@ from modules.architectures import (
 )
 from modules.self_prediction import (
     PHiLayer,
-    PHiMLP
+    PHiMLP,
+    vae_encoder,
+    GumbelQuantize,
+    vae_decoder,
 )
 
 from torchtune.modules.common_utils import reparametrize_as_dtype_state_dict_post_hook
 
+import wandb
 
 VALID_ATTN_LAYERS = {
     "FusedMultiHeadAttention": FusedMultiHeadAttention,
@@ -272,6 +276,7 @@ def llama3_phi(
     straight_through_eval: bool = False,
     use_information_bottleneck: bool = True,
     use_hidden_state_prediction: bool = True,
+    quantization_flavor : Optional[str] = None,
 ) -> TransformerDecoderPHi:
     """
     Factory function to build a Llama 3-style Transformer model integrated
@@ -365,25 +370,46 @@ def llama3_phi(
                 num_heads=num_heads,
                 num_kv_heads=num_kv_heads,
                 head_dim=head_dim,
-                q_proj=nn.Linear(embed_dim, num_heads * head_dim, bias=False),
-                k_proj=nn.Linear(embed_dim, num_kv_heads * head_dim, bias=False),
-                v_proj=nn.Linear(embed_dim, num_kv_heads * head_dim, bias=False),
-                output_proj=nn.Linear(embed_dim, embed_dim, bias=False),
+                q_proj=nn.Linear(128, num_heads * head_dim, bias=False),
+                k_proj=nn.Linear(128, num_kv_heads * head_dim, bias=False),
+                v_proj=nn.Linear(128, num_kv_heads * head_dim, bias=False),
+                output_proj=nn.Linear(embed_dim, 128, bias=False),
                 pos_embeddings=rope,
                 max_seq_len=max_seq_len,
                 attn_dropout=attn_dropout,
             )
 
+        if quantization_flavor is not None:
+            quantizer_module = {
+            'gumbel': GumbelQuantize,
+            'None': None,
+        }[quantization_flavor]
+
+        if quantizer_module is not None:
+            ne=512
+            ed = 128
+            print(f'number of embeddings: {ne}')
+            print(f'embedding dimension: {ed}')
+            quantizer_mlp = quantizer_module(num_embeddings=512, embedding_dim=128)
+            posterior_mlp = vae_encoder(tok_emb_dim=768)
+            decoder_mlp = vae_decoder(input_channels=128, 
+                                      tok_emb_dim=768)
+        else:
+            posterior_mlp = nn.Linear(embed_dim, 2 * embed_dim, bias=False)
+            quantizer_mlp = quantizer_module
+            decoder_mlp=nn.Linear(embed_dim, embed_dim, bias=False)
+
         self_prediction_layer = PHiLayer(
             d_model=embed_dim,
-            posterior_mlp=nn.Linear(embed_dim, 2 * embed_dim, bias=False),
-            decoder_mlp=nn.Linear(embed_dim, embed_dim, bias=False),
-            prior_prediction_mlp=self_prediction_mlp(dim=embed_dim,
-                                                     hidden_dim=hidden_dim,
-                                                     output_dim=2 * embed_dim,
+            posterior_mlp=posterior_mlp,
+            quantizer_mlp=quantizer_mlp,
+            decoder_mlp=decoder_mlp,
+            prior_prediction_mlp=self_prediction_mlp(dim=128,
+                                                     hidden_dim=128 * 8 // 3,
+                                                     output_dim=512,
                                                      num_layers=self_prediction_num_layers),
             prior_prediction_attention=prior_attention,
-            sa_norm=RMSNorm(dim=embed_dim, eps=norm_eps) if prior_attention else None,
+            sa_norm=RMSNorm(dim=128, eps=norm_eps) if prior_attention else None,
             self_critic_loss_factor=self_critic_loss_factor,
             next_loss_factor=phi_loss_factor,
             detach_hidden_states=detach_hidden_states,
@@ -394,6 +420,8 @@ def llama3_phi(
             use_hidden_state_prediction=use_hidden_state_prediction,
             use_information_bottleneck=use_information_bottleneck,
         )
+
+        wandb.watch(self_prediction_layer, log='all') # watching phi model
 
     # Assemble the final model
     return TransformerDecoderPHi(

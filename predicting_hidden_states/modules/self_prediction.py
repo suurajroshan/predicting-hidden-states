@@ -12,6 +12,8 @@ from torchtune.modules.feed_forward import FeedForward
 from torchtune.modules.kv_cache import KVCache
 from torchtune.modules.transformer import _get_clones
 
+from torch import einsum
+
 
 def gaussian_kl(mu_q, log_var_q, mu_p, log_var_p):
     """
@@ -131,6 +133,7 @@ class PHiLayer(torch.nn.Module):
         self,
         d_model: int,
         posterior_mlp: torch.nn.Module,
+        quantizer_mlp: torch.nn.Module,
         decoder_mlp: torch.nn.Module,
         prior_prediction_mlp: torch.nn.Module,
         prior_prediction_attention: Optional[torch.nn.Module] = None,
@@ -148,13 +151,14 @@ class PHiLayer(torch.nn.Module):
     ):
         super().__init__()
         self.posterior_mlp = posterior_mlp
+        self.quantizer = quantizer_mlp
         self.decoder_mlp = decoder_mlp
         self.prior_prediction_mlp = prior_prediction_mlp
         self.prior_prediction_attention = prior_prediction_attention
         self.sa_norm = sa_norm or nn.Identity()
         self.next_loss_factor = next_loss_factor
         self.self_critic_loss_factor = self_critic_loss_factor
-        self.initial_embedding = torch.nn.Parameter(torch.zeros(1, 1, d_model))
+        self.initial_embedding = torch.nn.Parameter(torch.zeros(1, 1, 128))
 
         self.detach_hidden_states = detach_hidden_states
         self.detach_targets = detach_targets
@@ -190,98 +194,161 @@ class PHiLayer(torch.nn.Module):
             h = h.detach()
         padding_mask = ~padding_mask
 
-        # --- Information Bottleneck ---
-        # 1. Compute posterior distribution q(z|h) and sample latent z
-        distribution = self.posterior_mlp(h)
-        q_mean, q_logvar = distribution.chunk(2, dim=-1)
-        q_logvar = torch.clamp(q_logvar, -5, 10)
+        if self.quantizer is None:
+            # --- Information Bottleneck ---
+            # 1. Compute posterior distribution q(z|h) and sample latent z
+            distribution = self.posterior_mlp(h)
+            q_mean, q_logvar = distribution.chunk(2, dim=-1)
+            q_logvar = torch.clamp(q_logvar, -5, 10)
 
-        if self.full_information_blockage:
-            # block all information in the latent space by having zero mean and log variance
-            q_mean = q_mean * 0.0
-            q_logvar = q_logvar * 0.0
+            if self.full_information_blockage:
+                # block all information in the latent space by having zero mean and log variance
+                q_mean = q_mean * 0.0
+                q_logvar = q_logvar * 0.0
 
-        # 2. Sample from the posterior using the reparameterization trick
-        use_information_bottleneck = self.training or not self.deterministic_at_inference
-        use_information_bottleneck = use_information_bottleneck and self.use_information_bottleneck
-        if use_information_bottleneck: # Only at training time
-            noise = torch.exp(0.5 * q_logvar) * torch.randn_like(q_mean)
-            if self.chance_to_deterministic > 0.0:
-                deterministic = torch.rand_like(q_mean[:, 0, 0]) < self.chance_to_deterministic
-                noise = noise * ~deterministic.view(-1, 1, 1)
-            z = q_mean + noise
-        else:
-            z = q_mean
+            # 2. Sample from the posterior using the reparameterization trick
+            use_information_bottleneck = self.training or not self.deterministic_at_inference
+            use_information_bottleneck = use_information_bottleneck and self.use_information_bottleneck
+            if use_information_bottleneck: # Only at training time
+                noise = torch.exp(0.5 * q_logvar) * torch.randn_like(q_mean)
+                if self.chance_to_deterministic > 0.0:
+                    deterministic = torch.rand_like(q_mean[:, 0, 0]) < self.chance_to_deterministic
+                    noise = noise * ~deterministic.view(-1, 1, 1)
+                z = q_mean + noise
+            else:
+                z = q_mean
 
-        # 3. Self-critic loss to prevent posterior collapse
-        self_critic_scores = -F.gaussian_nll_loss(
-            q_mean.unsqueeze(1),
-            z.unsqueeze(0),
-            q_logvar.exp().unsqueeze(1),
-            reduction="none").sum(-1).transpose(1, 2)  # shape: (batch_size, seq_len, d_model)
-        self_critic_targets = torch.arange(self_critic_scores.shape[2])[:, None].repeat(1, self_critic_scores.shape[1])
-        self_critic_losses = F.cross_entropy(
-            self_critic_scores.reshape(-1, self_critic_scores.shape[-1]),
-            self_critic_targets.flatten().to(h.device),
-            reduction="none",
-        )
-        self_critic_losses = (self_critic_losses * padding_mask.flatten()).view_as(padding_mask)
-        self_critic_loss = self_critic_losses.sum() / padding_mask.sum()
-        return_dict["self_critic_loss"] = self_critic_loss * self.self_critic_loss_factor
-
-        # --- Self Prediction ---
-        # 4. Compute autoregressive prior p(z_t | z_{<t})
-        prediction_input = z
-        if self.prior_prediction_attention is not None:
-            prediction_input = self.prior_prediction_attention(prediction_input, prediction_input,
-                                                               mask=mask, input_pos=input_pos)
-
-        # Shift input for next-step prediction
-        prediction_input = prediction_input[:, :-1]  # (batch_size, seq_len - 1, d_model)
-        prediction_input = torch.cat((self.initial_embedding.expand(prediction_input.shape[0], -1, -1),
-                                      prediction_input), dim=1)  # (batch_size, seq_len, d_model)
-        prediction_mean = self.prior_prediction_mlp(self.sa_norm(prediction_input))
-
-        if prediction_mean.shape[-1] == 2 * h.shape[-1]:
-            # Split the prediction mean and log variance
-            prediction_mean, prediction_logvar = prediction_mean.chunk(2, dim=-1)
-            prediction_logvar = torch.clamp(prediction_logvar, -5, 10)
-
-        if not self.use_hidden_state_prediction:
-            # Use unit gaussian as a prior if hidden state prediction is not used
-            prediction_mean = torch.zeros_like(prediction_mean)
-            prediction_logvar = torch.zeros_like(prediction_logvar)
-
-        # 5. Calculate PHi Loss (KL divergence between prior and posterior)
-        target_mean = q_mean
-        target_logvar = q_logvar
-        if self.detach_targets:
-            target_mean = target_mean.detach()
-            target_logvar = target_logvar.detach()
-
-        target_padding_mask = padding_mask
-
-        if self.use_information_bottleneck:
-            phi_losses = gaussian_kl(
-                mu_q=prediction_mean,
-                log_var_q=prediction_logvar,
-                mu_p=target_mean,
-                log_var_p=target_logvar,
+            # 3. Self-critic loss to prevent posterior collapse
+            self_critic_scores = -F.gaussian_nll_loss(
+                q_mean.unsqueeze(1),
+                z.unsqueeze(0),
+                q_logvar.exp().unsqueeze(1),
+                reduction="none").sum(-1).transpose(1, 2)  # shape: (batch_size, seq_len, d_model)
+            self_critic_targets = torch.arange(self_critic_scores.shape[2])[:, None].repeat(1, self_critic_scores.shape[1])
+            self_critic_losses = F.cross_entropy(
+                self_critic_scores.reshape(-1, self_critic_scores.shape[-1]),
+                self_critic_targets.flatten().to(h.device),
+                reduction="none",
             )
-        else:
-            phi_losses = F.mse_loss(prediction_mean, target_mean, reduction="none")
-        phi_losses = phi_losses.mean(dim=-1) * target_padding_mask
-        return_dict["tokenwise_phi_losses"] = phi_losses
-        loss = phi_losses.sum() / target_padding_mask.sum()
-        return_dict["phi_loss"] = loss * self.next_loss_factor
+            self_critic_losses = (self_critic_losses * padding_mask.flatten()).view_as(padding_mask)
+            self_critic_loss = self_critic_losses.sum() / padding_mask.sum()
+            return_dict["self_critic_loss"] = self_critic_loss * self.self_critic_loss_factor
 
-        if self.decoder_mlp is not None:
-            h_new = self.decoder_mlp(z)
-        else:
-            h_new = z
+            # --- Self Prediction ---
+            # 4. Compute autoregressive prior p(z_t | z_{<t})
+            prediction_input = z
+            if self.prior_prediction_attention is not None:
+                prediction_input = self.prior_prediction_attention(prediction_input, prediction_input,
+                                                                mask=mask, input_pos=input_pos)
+            # Shift input for next-step prediction
+            prediction_input = prediction_input[:, :-1]  # (batch_size, seq_len - 1, d_model)
+            prediction_input = torch.cat((self.initial_embedding.expand(prediction_input.shape[0], -1, -1),
+                                        prediction_input), dim=1)  # (batch_size, seq_len, d_model)
+            prediction_mean = self.prior_prediction_mlp(self.sa_norm(prediction_input))
 
-        if self.straight_through_eval and not self.training:
-            h_new = h
+            if prediction_mean.shape[-1] == 2 * h.shape[-1]:
+                # Split the prediction mean and log variance
+                prediction_mean, prediction_logvar = prediction_mean.chunk(2, dim=-1)
+                prediction_logvar = torch.clamp(prediction_logvar, -5, 10)
+
+            if not self.use_hidden_state_prediction:
+                # Use unit gaussian as a prior if hidden state prediction is not used
+                prediction_mean = torch.zeros_like(prediction_mean)
+                prediction_logvar = torch.zeros_like(prediction_logvar)
+
+            # 5. Calculate PHi Loss (KL divergence between prior and posterior)
+            target_mean = q_mean
+            target_logvar = q_logvar
+            if self.detach_targets:
+                target_mean = target_mean.detach()
+                target_logvar = target_logvar.detach()
+
+            target_padding_mask = padding_mask
+
+            if self.use_information_bottleneck:
+                phi_losses = gaussian_kl(
+                    mu_q=prediction_mean,
+                    log_var_q=prediction_logvar,
+                    mu_p=target_mean,
+                    log_var_p=target_logvar,
+                )
+            else:
+                phi_losses = F.mse_loss(prediction_mean, target_mean, reduction="none")
+            phi_losses = phi_losses.mean(dim=-1) * target_padding_mask
+            return_dict["tokenwise_phi_losses"] = phi_losses
+            loss = phi_losses.sum() / target_padding_mask.sum()
+            return_dict["phi_loss"] = loss * self.next_loss_factor
+
+            if self.decoder_mlp is not None:
+                h_new = self.decoder_mlp(z)
+            else:
+                h_new = z
+
+            if self.straight_through_eval and not self.training:
+                h_new = h
+
+        else:
+            z = self.posterior_mlp(h)
+            z_q, latent_diff, ind = self.quantizer(z)
+
+            ### Self Prediction ################################################################
+            # compute autoregressive prior based on the previous latent variables
+            prediction_input = z_q
+            if self.prior_prediction_attention is not None:
+                prediction_input = self.prior_prediction_attention(prediction_input, prediction_input,
+                                                                    mask=mask, input_pos=input_pos)
+            prediction_input = prediction_input[:, :-1]
+            prediction_input = torch.cat((self.initial_embedding.expand(prediction_input.shape[0], -1, -1),
+                                      prediction_input), dim=1)
+            prediction_z = self.prior_prediction_mlp(self.sa_norm(prediction_input))
+
+            # latent_losses = latent_diff * padding_mask
+            # return_dict["tokenwise_latent_loss"] = latent_losses
+            # latent_loss = latent_losses.sum() / padding_mask.sum()
+            # return_dict["latent_loss"] = latent_loss
+
+            # return_dict["latent_loss"] = latent_diff
+
+            # Calculate PHi loss (KL divergence between prior and posterior)
+            target_z = z
+            if self.detach_targets:
+                target_z = target_z.detach()
+            
+            target_padding_mask = padding_mask
+
+            categroical_input = F.log_softmax(prediction_z, dim=-1)
+            categorical_target = F.softmax(target_z, dim=-1)
+            phi_losses = F.kl_div(categroical_input, categorical_target, reduction='none')   
+            
+            phi_losses = phi_losses.sum(dim=-1) * target_padding_mask
+            return_dict['tokenwise_phi_losses'] = phi_losses 
+            loss = phi_losses.sum() / target_padding_mask.sum()
+            return_dict['phi_loss'] = loss * self.next_loss_factor
+
+            try:
+                return_dict["tokenwise_temperature"] = torch.ones(1)*self.quantizer.temperature
+                # return_dict["tokenwise_recon_scale"] = torch.ones(1)*self.quantizer.kld_scale 
+            except:
+                pass
+
+            if self.decoder_mlp is not None:
+                h_new = self.decoder_mlp(z_q)
+            else:
+                h_new = z_q
+
+            l2_norm = F.mse_loss(h, h_new, reduction='none').mean(dim=-1) * padding_mask
+            # return_dict["tokenwise_reconstruction_loss"] = l2_norm
+            recon_loss = l2_norm.sum() / padding_mask.sum()
+            return_dict["reconstruction_loss"] = recon_loss * self.recon_loss_weight
+            if self.straight_through_eval and not self.training:
+                h_new = h
+
+            encodings = F.one_hot(ind, self.quantizer.num_embeddings).float().reshape(-1, self.quantizer.num_embeddings)
+            avg_probs = encodings.mean(0)
+            perplexity = (-(avg_probs * torch.log(avg_probs + 1e-10)).sum()).exp() # exp(Entropy) = perplexity of a probabability distribution
+            cluster_use = torch.sum(avg_probs > 0)
+            return_dict["tokenwise_perplexity"] = perplexity
+            return_dict["tokenwise_cluster_use"] = cluster_use
 
         return_dict["h"] = h_new
         return return_dict
@@ -340,3 +407,59 @@ class PHiLossCollector:
         """Clears all accumulated losses."""
         self.losses = {}
 
+class vae_encoder(nn.Module):
+    """
+    Deepmind encoder
+
+    Args:
+        input_channels: 
+        n_hid: 
+    """
+    #TODO: change the function definition and also remove the hard coded channel sizes
+    def __init__(self,
+                tok_emb_dim: int = 768):
+        super().__init__()
+
+        self.net = nn.Linear(tok_emb_dim, 512, bias=False)
+
+    def forward(self, x):
+        return self.net(x)
+
+class vae_decoder(nn.Module):
+    """
+    Deepmind encoder
+
+    Args:
+        n_init: 
+        n_hid:
+        output_channels: 
+    """
+    def __init__(self,
+                 input_channels: int,
+                 tok_emb_dim : int = 768):
+        super().__init__()
+
+        self.net = nn.Linear(input_channels, tok_emb_dim, bias=False)
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class GumbelQuantize(nn.Module):
+    def __init__(self, num_embeddings: int = 1024, embedding_dim:int=512, straight_through=False):
+        super().__init__()
+
+        self.embedding_dim = embedding_dim
+        self.num_embeddings = num_embeddings
+
+        self.straight_through = straight_through
+
+        self.embed = nn.Embedding(num_embeddings, embedding_dim)
+        self.proj = nn.Linear(embedding_dim, num_embeddings, bias=False) 
+
+    def forward(self, z):
+        # logits = self.proj(z)
+        one_hot = F.gumbel_softmax(z, tau=self.temperature, dim=2, hard=True) # shape: (bsz, num_tokens, num_embeddings)
+        z_q = einsum('b s n, n d -> b s d', one_hot, self.embed.weight) # shape: (bsz, num_tokens, embedding_dim)
+        ind = one_hot.argmax(dim=2)
+        return z_q, None, ind

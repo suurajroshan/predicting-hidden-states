@@ -24,7 +24,7 @@ from torchtune.training.checkpointing._utils import (
     get_path,
     ModelType,
     safe_torch_load,
-    save_config
+    # save_config
 )
 from torchtune.training.checkpointing._checkpointer import _CheckpointerInterface
 

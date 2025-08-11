@@ -3,6 +3,7 @@ import logging
 from typing import Callable, Optional, Union
 
 import numpy as np
+import math
 
 import torch.nn
 import torch.nn.functional as F
@@ -1056,3 +1057,34 @@ def get_constant_schedule_with_warmup(
         return 1.0
 
     return LambdaLR(optimizer, lr_lambda, last_epoch)
+
+def cos_anneal(e0, e1, t0, t1, e):
+    """ ramp from (e0, t0) -> (e1, t1) through a cosine schedule based on e \in [e0, e1] """
+    alpha = max(0, min(1, (e - e0) / (e1 - e0))) # what fraction of the way through are we
+    alpha = 1.0 - math.cos(alpha * math.pi/2) # warp through cosine
+    t = alpha * t1 + (1 - alpha) * t0 # interpolate accordingly
+    return t
+
+class temperature_scheduler:
+    # The relaxation temperature τ is annealed from 1 to 1/16 over the first 150,000 updates.
+    def __init__(self, global_steps: int, temp_start: float, temp_end: float):
+        self.global_steps = global_steps
+        self.temp_start = float(temp_start)
+        self.temp_end = float(temp_end)
+
+    def __call__(self, curr_step: int):
+        t = cos_anneal(0, self.global_steps, self.temp_start, self.temp_end, curr_step)
+        return t
+
+class beta_scheduler:
+    def __init__(self, saturation_steps : int = 5000, beta_max : float = 8.5e-3):
+    # The KL weight β is increased from 0 to 6.6 over the first 5000 updates
+    # "We divide the overall loss by 256 × 256 × 3, so that the weight of the KL term
+    # becomes β/192, where β is the KL weight."
+    # TODO: OpenAI uses 6.6/192 but kinda tricky to do the conversion here... about 5e-4 works for this repo so far... :\
+        self.saturation_steps = saturation_steps
+        self.beta_max = float(beta_max)
+    
+    def __call__(self, curr_step: int):
+        t = cos_anneal(0, self.saturation_steps, 0.0, self.beta_max, curr_step)
+        return t

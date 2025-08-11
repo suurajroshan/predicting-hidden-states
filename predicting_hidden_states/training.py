@@ -280,6 +280,13 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
             else None,
         )
 
+        quantization_flavor = cfg.get("model", {}).get("self_prediction_quantize_flavor", None)
+        print(f'quantization_flavor: {quantization_flavor}')
+        if quantization_flavor == 'gumbel':
+            self.get_beta = config.instantiate(cfg.beta_scheduler)
+            self.get_temperature = config.instantiate(cfg.temperature_scheduler)
+            self.recon_loss_weight = cfg.recon_loss_weight
+
         # initialize loss
         self._loss_fn = config.instantiate(cfg.loss)
 
@@ -311,6 +318,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         # training state. The computation should happen after the dataloader has been setup
         if self._sampler is None:
             self._steps_per_epoch = self._estimate_steps_per_epoch()
+            print(self._steps_per_epoch)
         else:
             self._steps_per_epoch = (
                 len(self._dataloader) // self._gradient_accumulation_steps
@@ -330,6 +338,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                     "num_warmup_steps": 0,
                 }
             )
+
         self._lr_scheduler = self._setup_lr_scheduler(
             cfg_lr_scheduler=lr_scheduler_cfg,
             num_training_steps=self.max_total_steps,
@@ -673,6 +682,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                 packed = True
 
         if packed_on_the_fly:
+            print('data loader from packed on the fly')
             dataloader = DataLoader(
                 dataset=ds,
                 batch_size=batch_size,
@@ -919,6 +929,14 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                     new_tokens * world_size
                 )  # this might be an overestimate since all padding tokens are counted
 
+                # only assign temperature when using gumbel quantization
+                # try:
+                self._model.self_prediction_layer.quantizer.temperature = self.get_temperature(self.global_step)
+                # self._model.self_prediction_layer.quantizer.kld_scale = self.get_beta(self.global_step)
+                self._model.self_prediction_layer.recon_loss_weight = self.recon_loss_weight
+                # except:
+                #     pass
+                
                 loss, sub_losses_dict = self._loss_step(batch)
 
                 sub_losses_dict = {k: v.item() for k, v in sub_losses_dict.items()}
