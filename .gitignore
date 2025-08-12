@@ -1,1 +1,4 @@
 *.pyc
+*.err
+*.out
+*.model

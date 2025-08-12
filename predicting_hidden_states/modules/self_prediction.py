@@ -158,7 +158,7 @@ class PHiLayer(torch.nn.Module):
         self.sa_norm = sa_norm or nn.Identity()
         self.next_loss_factor = next_loss_factor
         self.self_critic_loss_factor = self_critic_loss_factor
-        self.initial_embedding = torch.nn.Parameter(torch.zeros(1, 1, 128))
+        self.initial_embedding = torch.nn.Parameter(torch.zeros(1, 1, [d_model if quantizer_mlp is None else 128][0]))
 
         self.detach_hidden_states = detach_hidden_states
         self.detach_targets = detach_targets

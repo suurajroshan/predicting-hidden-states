@@ -239,6 +239,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                 try:
                     run_id = self._metric_logger._wandb.run.id
                     output_dir = str(output_dir).replace("$WANDB_RUN_ID", run_id)
+                    print(run_id)
                     output_dir = PosixPath(output_dir)
                 except AttributeError:
                     print(
@@ -318,7 +319,6 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         # training state. The computation should happen after the dataloader has been setup
         if self._sampler is None:
             self._steps_per_epoch = self._estimate_steps_per_epoch()
-            print(self._steps_per_epoch)
         else:
             self._steps_per_epoch = (
                 len(self._dataloader) // self._gradient_accumulation_steps
@@ -682,7 +682,6 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                 packed = True
 
         if packed_on_the_fly:
-            print('data loader from packed on the fly')
             dataloader = DataLoader(
                 dataset=ds,
                 batch_size=batch_size,
@@ -930,12 +929,12 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                 )  # this might be an overestimate since all padding tokens are counted
 
                 # only assign temperature when using gumbel quantization
-                # try:
-                self._model.self_prediction_layer.quantizer.temperature = self.get_temperature(self.global_step)
-                # self._model.self_prediction_layer.quantizer.kld_scale = self.get_beta(self.global_step)
-                self._model.self_prediction_layer.recon_loss_weight = self.recon_loss_weight
-                # except:
-                #     pass
+                try:
+                    self._model.self_prediction_layer.quantizer.temperature = self.get_temperature(self.global_step)
+                    self._model.self_prediction_layer.quantizer.kld_scale = self.get_beta(self.global_step)
+                    self._model.self_prediction_layer.recon_loss_weight = self.recon_loss_weight
+                except:
+                    pass
                 
                 loss, sub_losses_dict = self._loss_step(batch)
 

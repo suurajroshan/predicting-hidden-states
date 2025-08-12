@@ -15,10 +15,10 @@ model:
   # These parameters configure the PHi layer integrated into the model
   use_self_prediction: true # Master switch to enable the PHi layer and its losses
   self_prediction_layer: 10 # Layer index *after which* the PHi layer is inserted
-  self_prediction_quantize_flavor: gumbel
+  self_prediction_quantize_flavor: None # either None or gumbel
 
   # Loss weights for the PHi mechanism
-  phi_loss_factor: 1.0
+  phi_loss_factor: 0.1
   self_critic_loss_factor: 0.0
 
   # PHi layer architecture and behavior
@@ -70,7 +70,7 @@ ignore_main_training_loss: false # If true, trains only on PHi loss, ignoring ne
 optimizer:
   _component_: torch.optim.AdamW
   fused: true
-  lr: 1.0e-4
+  lr: 3.0e-4
 
 # Learning rate scheduler
 lr_scheduler:
@@ -91,7 +91,7 @@ beta_scheduler:
   saturation_steps: 1000
   beta_max: 1
 
-recon_loss_weight: 0.5
+recon_loss_weight: 0.1
 
 # Main loss function for next-token prediction
 loss:
@@ -133,7 +133,7 @@ save_optimizer_state: false # Whether to save optimizer state in checkpoints
 # ----------------------------------------------------------------------------------
 # Evaluation and Logging
 # ----------------------------------------------------------------------------------
-evaluate_every_n_steps: 500
+evaluate_every_n_steps: 1000
 
 # Logging configuration
 output_dir: '/home/woody/iwbi/iwbi106h/suuraj/codes/hidden-state-predictions/hidden-state-prediction-master/hidden_state_prediction/tmp' # Fallback output directory

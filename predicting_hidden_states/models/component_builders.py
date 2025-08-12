@@ -364,26 +364,33 @@ def llama3_phi(
     self_prediction_layer = None
     if use_self_prediction:
         prior_attention = None
+
+        quantizer_module = {
+            'gumbel': GumbelQuantize,
+            'None': None,
+        }[quantization_flavor]
+
+        # TODO: remove the dynamic assigning of embedding dim in prior attn, do it upstream
         if use_self_attention and phi_loss_factor > 0.0:
+            print('embed_dim: ',[embed_dim if quantizer_module is None else 128][0] )
             prior_attention = MultiHeadAttention(
                 embed_dim=embed_dim,
                 num_heads=num_heads,
                 num_kv_heads=num_kv_heads,
                 head_dim=head_dim,
-                q_proj=nn.Linear(128, num_heads * head_dim, bias=False),
-                k_proj=nn.Linear(128, num_kv_heads * head_dim, bias=False),
-                v_proj=nn.Linear(128, num_kv_heads * head_dim, bias=False),
-                output_proj=nn.Linear(embed_dim, 128, bias=False),
+                q_proj=nn.Linear([128 if quantizer_module is not None else embed_dim][0], 
+                                num_heads * head_dim, bias=False),
+                k_proj=nn.Linear([128 if quantizer_module is not None else embed_dim][0], 
+                                num_kv_heads * head_dim, bias=False),
+                v_proj=nn.Linear([128 if quantizer_module is not None else embed_dim][0], 
+                                num_kv_heads * head_dim, bias=False),
+                output_proj=nn.Linear(embed_dim, 
+                                    [128 if quantizer_module is not None else embed_dim][0], 
+                                    bias=False),
                 pos_embeddings=rope,
                 max_seq_len=max_seq_len,
                 attn_dropout=attn_dropout,
             )
-
-        if quantization_flavor is not None:
-            quantizer_module = {
-            'gumbel': GumbelQuantize,
-            'None': None,
-        }[quantization_flavor]
 
         if quantizer_module is not None:
             ne=512
@@ -404,12 +411,12 @@ def llama3_phi(
             posterior_mlp=posterior_mlp,
             quantizer_mlp=quantizer_mlp,
             decoder_mlp=decoder_mlp,
-            prior_prediction_mlp=self_prediction_mlp(dim=128,
-                                                     hidden_dim=128 * 8 // 3,
-                                                     output_dim=512,
+            prior_prediction_mlp=self_prediction_mlp(dim=[128 if quantizer_mlp is not None else embed_dim][0],
+                                                     hidden_dim=[128 * 8 // 3 if quantizer_mlp is not None else hidden_dim][0],
+                                                     output_dim=[512 if quantizer_mlp is not None else 2*embed_dim][0],
                                                      num_layers=self_prediction_num_layers),
             prior_prediction_attention=prior_attention,
-            sa_norm=RMSNorm(dim=128, eps=norm_eps) if prior_attention else None,
+            sa_norm=RMSNorm(dim=[128 if quantizer_mlp is not None else embed_dim][0], eps=norm_eps) if prior_attention else None,
             self_critic_loss_factor=self_critic_loss_factor,
             next_loss_factor=phi_loss_factor,
             detach_hidden_states=detach_hidden_states,

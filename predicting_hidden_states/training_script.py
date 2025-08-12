@@ -17,8 +17,8 @@ def main():
     # cfg = OmegaConf.load("configs/transformer_pfa_0_1B_PHi.yaml")
     # cfg = OmegaConf.load("configs/lstm_pfa_0_1B_PHi.yaml")
 
-    cfg.evaluate_every_n_steps = 10
-    cfg.checkpoint_every_n_steps = 20
+    # cfg.evaluate_every_n_steps = 10
+    # cfg.checkpoint_every_n_steps = 20
     cfg.compile = False
     # cfg.metric_logger._component_ = "torchtune.training.metric_logging.DiskLogger"
 
