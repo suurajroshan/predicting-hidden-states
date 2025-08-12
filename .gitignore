@@ -1,4 +1,9 @@
+# Ignore caches
 *.pyc
+
+# Ignore saved models
+*.model
+
+# Ignore logs
 *.err
 *.out
-*.model
