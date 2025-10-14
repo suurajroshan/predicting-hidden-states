@@ -302,28 +302,58 @@ class PHiLayer(torch.nn.Module):
                                       prediction_input), dim=1)
             prediction_z = self.prior_prediction_mlp(self.sa_norm(prediction_input))
 
-            # latent_losses = latent_diff * padding_mask
-            # return_dict["tokenwise_latent_loss"] = latent_losses
-            # latent_loss = latent_losses.sum() / padding_mask.sum()
-            # return_dict["latent_loss"] = latent_loss
+            # latent loss: defined as the dl kiv between the categorical distribution (z) and uniform prior
+            # NOT USING THIS LOSS FOR TRAINING
+            latent_losses = latent_diff * padding_mask
+            return_dict["tokenwise_latent_loss"] = latent_losses
+            latent_loss = latent_losses.sum() / padding_mask.sum()
+            return_dict["latent_loss"] = latent_loss * 0.
 
-            # return_dict["latent_loss"] = latent_diff
+            # # Calculate PHi loss (KL divergence between prior and posterior)
+            # target_z = z
+            # if self.detach_targets:
+            #     target_z = target_z.detach()
+            
+            # target_padding_mask = padding_mask
 
-            # Calculate PHi loss (KL divergence between prior and posterior)
+            # categroical_input = F.log_softmax(prediction_z, dim=-1)
+            # categorical_target = F.softmax(target_z, dim=-1)
+            # phi_losses = F.kl_div(categroical_input, categorical_target, reduction='none')   
+            
+            # phi_losses = phi_losses.sum(dim=-1) * target_padding_mask
+            # return_dict['tokenwise_phi_losses'] = phi_losses 
+            # loss = phi_losses.sum() / target_padding_mask.sum()
+            # return_dict['phi_loss'] = loss * self.next_loss_factor
+
+             # Two losses: 1. trains only the prior 2. trains only the posterior
+            
+            # 1. detach posterior ( train only the prior )
             target_z = z
-            if self.detach_targets:
-                target_z = target_z.detach()
+            target_z = target_z.detach()
             
             target_padding_mask = padding_mask
 
-            categroical_input = F.log_softmax(prediction_z, dim=-1)
-            categorical_target = F.softmax(target_z, dim=-1)
-            phi_losses = F.kl_div(categroical_input, categorical_target, reduction='none')   
+            categroical_input = F.log_softmax(prediction_z, dim=-1) # prior / log probs
+            categorical_target = F.log_softmax(target_z, dim=-1) # posterior / log probs
+            phi_losses_prior = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)
             
-            phi_losses = phi_losses.sum(dim=-1) * target_padding_mask
-            return_dict['tokenwise_phi_losses'] = phi_losses 
-            loss = phi_losses.sum() / target_padding_mask.sum()
-            return_dict['phi_loss'] = loss * self.next_loss_factor
+            phi_losses_prior = phi_losses_prior.sum(dim=-1) * target_padding_mask
+            return_dict['tokenwise_phi_losses_prior'] = phi_losses_prior 
+            loss = phi_losses_prior.sum() / target_padding_mask.sum()
+            return_dict['phi_loss_prior'] = loss * self.next_loss_factor
+
+            # 2. detach proior ( train only the posterior )
+            prediction_z_copy = prediction_z
+            prediction_z_copy = prediction_z_copy.detach()
+
+            categroical_input = F.log_softmax(prediction_z_copy, dim=-1)
+            categorical_target = F.log_softmax(z, dim=-1)
+            phi_losses_posterior = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)
+
+            phi_losses_posterior = phi_losses_posterior.sum(dim=-1) * target_padding_mask
+            return_dict['tokenwise_phi_losses_posterior'] = phi_losses_posterior
+            loss = phi_losses_posterior.sum() / target_padding_mask.sum()
+            return_dict['phi_loss_posterior'] = loss * self.next_loss_factor
 
             try:
                 return_dict["tokenwise_temperature"] = torch.ones(1)*self.quantizer.temperature

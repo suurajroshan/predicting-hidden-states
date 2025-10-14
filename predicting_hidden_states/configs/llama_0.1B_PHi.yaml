@@ -47,9 +47,6 @@ dataset:
   packed_sequence_length: 2048
   split_across_pack: false
 
-  token_perturbation_rate: 0.2
-  included_learning_levels: [0,1,2,3,4]
-
   num_workers: 0
 shuffle: true # Whether to shuffle the dataset
 batch_size: 16
