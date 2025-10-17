@@ -11,15 +11,22 @@ compile: false # Whether to compile the model with torch.compile
 # ----------------------------------------------------------------------------------
 model:
   _component_: models.llama3_ascii_self_prediction_0_1b
+  
   # PHi (Self-Prediction) Layer Configuration
   # These parameters configure the PHi layer integrated into the model
   use_self_prediction: true # Master switch to enable the PHi layer and its losses
   self_prediction_layer: 10 # Layer index *after which* the PHi layer is inserted
-  self_prediction_quantize_flavor: None # either None or gumbel
+  self_prediction_information_bottleneck: quantized # either `continuous` / `quantized`
+  
+  # Configuration specific to the quantized PHi layer
+  self_prediction_module:
+    codeword_dim: 768
+    codebook_dim: 1024
+    reconstruction_loss_factor: 0.001
 
   # Loss weights for the PHi mechanism
-  phi_loss_factor: 0.1
-  self_critic_loss_factor: 0.0
+  phi_loss_factor: 0.001
+  self_critic_loss_factor: 0.001
 
   # PHi layer architecture and behavior
   use_self_attention: true # Whether the PHi prior uses self-attention
@@ -79,16 +86,10 @@ lr_scheduler:
 # ramping up the beta to avoid posterior collapse
 temperature_scheduler:
   _component_: modules.architectures.temperature_scheduler
-  global_steps: 10_000
-  temp_start: 15
-  temp_end: 0.625
+  global_steps: 30_000
+  temp_start: 1
+  temp_end: 0.1
 
-beta_scheduler:
-  _component_: modules.architectures.beta_scheduler
-  saturation_steps: 1000
-  beta_max: 1
-
-recon_loss_weight: 0.1
 
 # Main loss function for next-token prediction
 loss:
@@ -133,8 +134,8 @@ save_optimizer_state: false # Whether to save optimizer state in checkpoints
 evaluate_every_n_steps: 1000
 
 # Logging configuration
-output_dir: '/home/woody/iwbi/iwbi106h/suuraj/codes/hidden-state-predictions/hidden-state-prediction-master/hidden_state_prediction/tmp' # Fallback output directory
-log_every_n_steps: 5
+output_dir: '/home/woody/iwbi/iwbi106h/suuraj/codes/hidden-state-predictions/predicting-hidden-states/predicting_hidden_states/tmp' # Fallback output directory
+log_every_n_steps: 1000
 log_peak_memory_stats: false
 
 metric_logger:

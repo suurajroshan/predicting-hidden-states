@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Dict
 
 from torch import nn
 from torchtune.models.llama3._model_utils import scale_hidden_dim_for_mlp
@@ -276,7 +276,8 @@ def llama3_phi(
     straight_through_eval: bool = False,
     use_information_bottleneck: bool = True,
     use_hidden_state_prediction: bool = True,
-    quantization_flavor : Optional[str] = None,
+    self_prediction_information_bottleneck : Optional[str] = 'continuous',
+    self_prediction_module: Optional[Dict] = None,
 ) -> TransformerDecoderPHi:
     """
     Factory function to build a Llama 3-style Transformer model integrated
@@ -330,6 +331,8 @@ def llama3_phi(
     rope = Llama3ScaledRoPE(dim=head_dim, max_seq_len=max_seq_len, base=rope_base, scale_factor=scale_factor)
     hidden_dim = intermediate_dim if intermediate_dim else scale_hidden_dim_for_mlp(embed_dim)
 
+    print(self_prediction_module)
+
     # Build the stack of Transformer layers
     layers = []
     for _ in range(num_layers):
@@ -366,41 +369,38 @@ def llama3_phi(
         prior_attention = None
 
         quantizer_module = {
-            'gumbel': GumbelQuantize,
-            'None': None,
-        }[quantization_flavor]
+            'quantized': GumbelQuantize,
+            'continuous': None,
+        }[self_prediction_information_bottleneck]
+
+        if quantizer_module is not None:
+            codeword_dim = self_prediction_module['codeword_dim']
+            codebook_dim = self_prediction_module['codebook_dim']
+            embed_dim = codeword_dim  # override embed dim if using quantization
+            hidden_dim = codeword_dim * 8 // 3 # TODO: currrently a heuristic, can be parameterized later
+            print(f'number of embeddings: {codebook_dim}')
+            print(f'embedding dimension: {codeword_dim}')
+            quantizer_mlp = quantizer_module(num_embeddings=codebook_dim, embedding_dim=codeword_dim)
+            posterior_mlp = vae_encoder(codebook_dim=codebook_dim, tok_emb_dim=codeword_dim)
+            decoder_mlp = vae_decoder(input_channels=codeword_dim, tok_emb_dim=embed_dim)
 
         # TODO: remove the dynamic assigning of embedding dim in prior attn, do it upstream
         if use_self_attention and phi_loss_factor > 0.0:
-            print('embed_dim: ',[embed_dim if quantizer_module is None else 128][0] )
+            # print('embed_dim: ',[embed_dim if quantizer_module is None else self_prediction_module.codeword_dim][0] )
             prior_attention = MultiHeadAttention(
                 embed_dim=embed_dim,
                 num_heads=num_heads,
                 num_kv_heads=num_kv_heads,
                 head_dim=head_dim,
-                q_proj=nn.Linear([128 if quantizer_module is not None else embed_dim][0], 
-                                num_heads * head_dim, bias=False),
-                k_proj=nn.Linear([128 if quantizer_module is not None else embed_dim][0], 
-                                num_kv_heads * head_dim, bias=False),
-                v_proj=nn.Linear([128 if quantizer_module is not None else embed_dim][0], 
-                                num_kv_heads * head_dim, bias=False),
-                output_proj=nn.Linear(embed_dim, 
-                                    [128 if quantizer_module is not None else embed_dim][0], 
-                                    bias=False),
+                q_proj=nn.Linear(embed_dim, num_heads * head_dim, bias=False),
+                k_proj=nn.Linear(embed_dim, num_kv_heads * head_dim, bias=False),
+                v_proj=nn.Linear(embed_dim, num_kv_heads * head_dim, bias=False),
+                output_proj=nn.Linear(embed_dim, embed_dim, bias=False),
                 pos_embeddings=rope,
                 max_seq_len=max_seq_len,
                 attn_dropout=attn_dropout,
             )
 
-        if quantizer_module is not None:
-            ne=512
-            ed = 128
-            print(f'number of embeddings: {ne}')
-            print(f'embedding dimension: {ed}')
-            quantizer_mlp = quantizer_module(num_embeddings=512, embedding_dim=128)
-            posterior_mlp = vae_encoder(tok_emb_dim=768)
-            decoder_mlp = vae_decoder(input_channels=128, 
-                                      tok_emb_dim=768)
         else:
             posterior_mlp = nn.Linear(embed_dim, 2 * embed_dim, bias=False)
             quantizer_mlp = quantizer_module
@@ -411,12 +411,12 @@ def llama3_phi(
             posterior_mlp=posterior_mlp,
             quantizer_mlp=quantizer_mlp,
             decoder_mlp=decoder_mlp,
-            prior_prediction_mlp=self_prediction_mlp(dim=[128 if quantizer_mlp is not None else embed_dim][0],
-                                                     hidden_dim=[128 * 8 // 3 if quantizer_mlp is not None else hidden_dim][0],
-                                                     output_dim=[512 if quantizer_mlp is not None else 2*embed_dim][0],
+            prior_prediction_mlp=self_prediction_mlp(dim=embed_dim,
+                                                     hidden_dim=hidden_dim,
+                                                     output_dim=[codebook_dim if quantizer_module is not None else 2*embed_dim][0],
                                                      num_layers=self_prediction_num_layers),
             prior_prediction_attention=prior_attention,
-            sa_norm=RMSNorm(dim=[128 if quantizer_mlp is not None else embed_dim][0], eps=norm_eps) if prior_attention else None,
+            sa_norm=RMSNorm(dim=embed_dim, eps=norm_eps) if prior_attention else None,
             self_critic_loss_factor=self_critic_loss_factor,
             next_loss_factor=phi_loss_factor,
             detach_hidden_states=detach_hidden_states,

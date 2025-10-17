@@ -111,6 +111,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         self._output_dir = cfg.output_dir
         self._log_every_n_steps = cfg.get("log_every_n_steps", 1)
         self._checkpoint_every_n_steps = cfg.get("checkpoint_every_n_steps", 1000)
+        self._evaluate_n_datapoints = cfg.get("evaluate_n_datapoints", 1000)    
         self._evaluate_every_n_steps = cfg.get("evaluate_every_n_steps", 1000)
         self._save_optimizer_state = cfg.get("save_optimizer_state", True)
         self._overwrite_checkpoints = cfg.get("overwrite_checkpoints", True)
@@ -281,12 +282,11 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
             else None,
         )
 
-        quantization_flavor = cfg.get("model", {}).get("self_prediction_quantize_flavor", None)
-        print(f'quantization_flavor: {quantization_flavor}')
-        if quantization_flavor == 'gumbel':
-            self.get_beta = config.instantiate(cfg.beta_scheduler)
+        info_bottleneck = cfg.get("model", {}).get("self_prediction_information_bottleneck", None)
+        log.info(f'information bottleneck: {info_bottleneck}')
+        if info_bottleneck == 'quantized':
             self.get_temperature = config.instantiate(cfg.temperature_scheduler)
-            self.recon_loss_weight = cfg.recon_loss_weight
+            self.reconstruction_loss_factor = cfg.model.self_prediction_module.reconstruction_loss_factor
 
         # initialize loss
         self._loss_fn = config.instantiate(cfg.loss)
@@ -893,6 +893,12 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         cumulative_tokens = 0
         meter = MultiMeter()
 
+        # for debugging, ignore, delete later
+        try:
+            self._model.self_prediction_layer.log_hist = False # Delete later, temp, debug
+        except:
+            pass
+
         self._profiler.start()
         # self.epochs_run should be non-zero when we're resuming from a checkpoint
         for curr_epoch in range(self.epochs_run, self.total_epochs):
@@ -929,13 +935,15 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                 )  # this might be an overestimate since all padding tokens are counted
 
                 # only assign temperature when using gumbel quantization
-                try:
+                if self.cfg.model.self_prediction_information_bottleneck == 'quantized':
                     self._model.self_prediction_layer.quantizer.temperature = self.get_temperature(self.global_step)
-                    self._model.self_prediction_layer.quantizer.kld_scale = self.get_beta(self.global_step)
-                    self._model.self_prediction_layer.recon_loss_weight = self.recon_loss_weight
-                except:
-                    pass
-                
+                    self._model.self_prediction_layer.reconstruction_loss_factor = self.reconstruction_loss_factor
+                    # for debugging, ignore, delete later
+                    try:
+                        if idx % 1000 == 0:
+                            self._model.self_prediction_layer.log_hist = True
+                    except:
+                        pass
                 loss, sub_losses_dict = self._loss_step(batch)
 
                 sub_losses_dict = {k: v.item() for k, v in sub_losses_dict.items()}
@@ -1000,7 +1008,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                         if 'learning_levels_pfa' in self.cfg.dataset._component_:
                             plotly_figure_dict, eval_values_dict = pfa_training_evaluation(
                                 self,
-                                num_datapoints=500,
+                                num_datapoints=self._evaluate_n_datapoints,
                                 ic_generalization_evaluation=self._ic_generalization_eval
                             )
                         else:

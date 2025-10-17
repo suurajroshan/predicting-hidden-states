@@ -1,3 +1,8 @@
+# Ignore files used for debugging
+*_debug.*
+slurm/
+tmp/
+
 # Ignore caches
 *.pyc
 

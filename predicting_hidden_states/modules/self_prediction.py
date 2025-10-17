@@ -13,6 +13,8 @@ from torchtune.modules.kv_cache import KVCache
 from torchtune.modules.transformer import _get_clones
 
 from torch import einsum
+from scipy.cluster.vq import kmeans2
+import wandb
 
 
 def gaussian_kl(mu_q, log_var_q, mu_p, log_var_p):
@@ -158,7 +160,7 @@ class PHiLayer(torch.nn.Module):
         self.sa_norm = sa_norm or nn.Identity()
         self.next_loss_factor = next_loss_factor
         self.self_critic_loss_factor = self_critic_loss_factor
-        self.initial_embedding = torch.nn.Parameter(torch.zeros(1, 1, [d_model if quantizer_mlp is None else 128][0]))
+        self.initial_embedding = torch.nn.Parameter(torch.zeros(1, 1, d_model))
 
         self.detach_hidden_states = detach_hidden_states
         self.detach_targets = detach_targets
@@ -289,10 +291,36 @@ class PHiLayer(torch.nn.Module):
 
         else:
             z = self.posterior_mlp(h)
-            z_q, latent_diff, ind = self.quantizer(z)
+            z_q, latent_losses, ind = self.quantizer(z)
+
+            wandb.log({"num unique idxs": len(set(ind.flatten().tolist()))})
+
+            if self.log_hist:
+                ind_hist, ind_bin_edges = np.histogram(ind.flatten().cpu().numpy(), bins=512, density=True)
+                wandb.log({"custom/ind hist": wandb.Histogram(np_histogram=(ind_hist, ind_bin_edges))})
+
+            # Loss term -> KL divergence of the uniform prior / do not train but good to observe
+            latent_losses = latent_losses.sum(-1) * padding_mask
+            return_dict["tokenwise_latent_loss"] = latent_losses
+
+            ### Self Critic Losses ###
+            ind_one_hot = F.one_hot(ind, num_classes=z.size(-1))  # (batch, seq_len, num_codes)
+            self_critic_scores = torch.einsum('i s c, j s c ->i j s', z, ind_one_hot.to(z.dtype))  # (batch_z, batch_ind_one_hot, seq_len)
+            self_critic_scores = self_critic_scores.transpose(1, 2)  # (batch_z, seq_len, batch_ind_one_hot)
+            self_critic_targets = torch.arange(self_critic_scores.shape[2])[:, None].repeat(1, self_critic_scores.shape[1])  # (batch, seq_len)
+            self_critic_losses = F.cross_entropy(
+                self_critic_scores.reshape(-1, self_critic_scores.shape[-1]).float(),
+                self_critic_targets.flatten().to(z.device),
+                reduction="none",
+            )
+            self_critic_losses = (self_critic_losses * padding_mask.flatten()).view_as(padding_mask)
+            return_dict["tokenwise_self_critic_loss"] = self_critic_losses
+            self_critic_loss = self_critic_losses.sum() / padding_mask.sum()
+            return_dict["self_critic_loss"] = self_critic_loss * self.self_critic_loss_factor
 
             ### Self Prediction ################################################################
             # compute autoregressive prior based on the previous latent variables
+            # TODO: the prediction has been modified to include additional term / CAREFUL for experiments
             prediction_input = z_q
             if self.prior_prediction_attention is not None:
                 prediction_input = self.prior_prediction_attention(prediction_input, prediction_input,
@@ -302,30 +330,29 @@ class PHiLayer(torch.nn.Module):
                                       prediction_input), dim=1)
             prediction_z = self.prior_prediction_mlp(self.sa_norm(prediction_input))
 
-            # latent loss: defined as the dl kiv between the categorical distribution (z) and uniform prior
-            # NOT USING THIS LOSS FOR TRAINING
-            latent_losses = latent_diff * padding_mask
-            return_dict["tokenwise_latent_loss"] = latent_losses
-            latent_loss = latent_losses.sum() / padding_mask.sum()
-            return_dict["latent_loss"] = latent_loss * 0.
-
-            # # Calculate PHi loss (KL divergence between prior and posterior)
+            # Calculate PHi loss (KL divergence between prior(input) and posterior(target))
             # target_z = z
             # if self.detach_targets:
             #     target_z = target_z.detach()
             
             # target_padding_mask = padding_mask
 
-            # categroical_input = F.log_softmax(prediction_z, dim=-1)
-            # categorical_target = F.softmax(target_z, dim=-1)
-            # phi_losses = F.kl_div(categroical_input, categorical_target, reduction='none')   
+            # categroical_input = F.log_softmax(prediction_z, dim=-1) # prior / log probs
+            # categorical_target = F.log_softmax(target_z, dim=-1) # posterior / log probs
+            # phi_losses = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)   
+            
+            # # # entropy of targets
+            # target_entropy = (-categorical_target.exp() * categorical_target).sum(dim=-1)
+            # input_entropy = (-categroical_input.exp() * categroical_input).sum(dim=-1)
+            # return_dict["tokenwise_phi_target_entropy"] = target_entropy
+            # return_dict["tokenwise_phi_input_entropy"] = input_entropy
             
             # phi_losses = phi_losses.sum(dim=-1) * target_padding_mask
             # return_dict['tokenwise_phi_losses'] = phi_losses 
             # loss = phi_losses.sum() / target_padding_mask.sum()
             # return_dict['phi_loss'] = loss * self.next_loss_factor
 
-             # Two losses: 1. trains only the prior 2. trains only the posterior
+            # Two losses: 1. trains only the prior 2. trains only the posterior
             
             # 1. detach posterior ( train only the prior )
             target_z = z
@@ -342,7 +369,7 @@ class PHiLayer(torch.nn.Module):
             loss = phi_losses_prior.sum() / target_padding_mask.sum()
             return_dict['phi_loss_prior'] = loss * self.next_loss_factor
 
-            # 2. detach proior ( train only the posterior )
+            # 2. detach prior ( train only the posterior )
             prediction_z_copy = prediction_z
             prediction_z_copy = prediction_z_copy.detach()
 
@@ -355,33 +382,33 @@ class PHiLayer(torch.nn.Module):
             loss = phi_losses_posterior.sum() / target_padding_mask.sum()
             return_dict['phi_loss_posterior'] = loss * self.next_loss_factor
 
-            try:
-                return_dict["tokenwise_temperature"] = torch.ones(1)*self.quantizer.temperature
-                # return_dict["tokenwise_recon_scale"] = torch.ones(1)*self.quantizer.kld_scale 
-            except:
-                pass
+
+            # log temperature
+            return_dict["tokenwise_temperature"] = torch.ones(1)*self.quantizer.temperature
 
             if self.decoder_mlp is not None:
                 h_new = self.decoder_mlp(z_q)
             else:
                 h_new = z_q
 
-            l2_norm = F.mse_loss(h, h_new, reduction='none').mean(dim=-1) * padding_mask
-            # return_dict["tokenwise_reconstruction_loss"] = l2_norm
+            l2_norm = F.mse_loss(h, h_new, reduction='none').sum(dim=-1) * target_padding_mask
+            return_dict["tokenwise_reconstruction_loss"] = l2_norm
             recon_loss = l2_norm.sum() / padding_mask.sum()
-            return_dict["reconstruction_loss"] = recon_loss * self.recon_loss_weight
+            return_dict["reconstruction_loss"] = recon_loss * self.reconstruction_loss_factor
             if self.straight_through_eval and not self.training:
                 h_new = h
 
             encodings = F.one_hot(ind, self.quantizer.num_embeddings).float().reshape(-1, self.quantizer.num_embeddings)
             avg_probs = encodings.mean(0)
+            
+            #compute the codebook perplexity
             perplexity = (-(avg_probs * torch.log(avg_probs + 1e-10)).sum()).exp() # exp(Entropy) = perplexity of a probabability distribution
             cluster_use = torch.sum(avg_probs > 0)
             return_dict["tokenwise_perplexity"] = perplexity
             return_dict["tokenwise_cluster_use"] = cluster_use
 
-        return_dict["h"] = h_new
-        return return_dict
+            return_dict["h"] = h_new
+            return return_dict
 
     def setup_cache(
         self,
@@ -445,12 +472,12 @@ class vae_encoder(nn.Module):
         input_channels: 
         n_hid: 
     """
-    #TODO: change the function definition and also remove the hard coded channel sizes
     def __init__(self,
+                codebook_dim : int = 512,
                 tok_emb_dim: int = 768):
         super().__init__()
 
-        self.net = nn.Linear(tok_emb_dim, 512, bias=False)
+        self.net = nn.Linear(tok_emb_dim, codebook_dim, bias=False)
 
     def forward(self, x):
         return self.net(x)
@@ -474,22 +501,88 @@ class vae_decoder(nn.Module):
     def forward(self, x):
         return self.net(x)
 
+class VQVAEQuantize(nn.Module):
+    """
+    Neural Discrete Representation Learning, van den Oord et al. 2017
+    https://arxiv.org/abs/1711.00937
+
+    Follows the original DeepMind implementation
+    https://github.com/deepmind/sonnet/blob/v2/sonnet/src/nets/vqvae.py
+    https://github.com/deepmind/sonnet/blob/v2/examples/vqvae_example.ipynb
+    """
+    def __init__(self, 
+                num_embeddings : int = 1024, 
+                embedding_dim : int = 512):
+        super().__init__()
+        
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
+
+        self._kld_scale = 10.
+
+        self.embed = nn.Embedding(num_embeddings, embedding_dim)
+
+        self.register_buffer('data_initialized', torch.zeros(1))
+
+    def forward(self, z):
+        """
+        bsz: batch size
+        s : sequence length
+        hid_dim : hidden dimension
+        """
+
+        bsz, s, hid_dim = z.size()
+        flatten = z.reshape(-1, self.embedding_dim)
+
+        if not self.data_initialized.item() and self.training:
+            print('running kmeans!')
+            rp = torch.randperm(flatten.size(0) // 3 )
+            #TODO: check for Warning: One of the clusters is empty. Re-run kmeans with a different initialization. 
+            # return fun(*args, **kwargs)
+            kd = kmeans2(flatten[rp].to(torch.float32).data.cpu().numpy(), 
+                        self.num_embeddings, 
+                        minit='points',)
+            self.embed.weight.data.copy_(torch.from_numpy(kd[0]))
+            self.data_initialized.fill_(1)
+
+        dist = (
+            flatten.pow(2).sum(1, keepdim=True)
+            - 2 * flatten @ self.embed.weight.t()
+            + self.embed.weight.pow(2).sum(1, keepdim=True).t()
+        )
+
+        _, ind = (-dist).max(1)
+        ind = ind.view(bsz, s)
+
+        z_q = self.embed_code(ind)
+        commitment_cost = 0.25
+        diff = commitment_cost * ( ( z_q.detach() - z ).pow(2) + ( z_q - z.detach() ).pow(2) ).mean()
+        # diff *= self._kld_scale\
+
+        z_q = z + (z_q - z).detach() # noop in forward pass, straight-through gradient estimator in backward pass
+        return z_q, diff, ind
+
+    def embed_code(self, embed_id):
+        return F.embedding(embed_id, self.embed.weight)
+
 
 class GumbelQuantize(nn.Module):
-    def __init__(self, num_embeddings: int = 1024, embedding_dim:int=512, straight_through=False):
+    def __init__(self, num_embeddings: int = 1024, embedding_dim:int=512):
         super().__init__()
 
         self.embedding_dim = embedding_dim
         self.num_embeddings = num_embeddings
 
-        self.straight_through = straight_through
-
         self.embed = nn.Embedding(num_embeddings, embedding_dim)
-        self.proj = nn.Linear(embedding_dim, num_embeddings, bias=False) 
+        self.proj = nn.Linear(embedding_dim, num_embeddings, bias=False) # nn.Sequential(nn.Linear(embedding_dim, num_embeddings), nn.ReLU(inplace=True))
 
-    def forward(self, z):
-        # logits = self.proj(z)
-        one_hot = F.gumbel_softmax(z, tau=self.temperature, dim=2, hard=True) # shape: (bsz, num_tokens, num_embeddings)
+    def forward(self, logits):
+        one_hot = F.gumbel_softmax(logits, tau=self.temperature, dim=2, hard=True) # shape: (bsz, num_tokens, num_embeddings)
         z_q = einsum('b s n, n d -> b s d', one_hot, self.embed.weight) # shape: (bsz, num_tokens, embedding_dim)
         ind = one_hot.argmax(dim=2)
-        return z_q, None, ind
+
+        qy = F.softmax(logits, dim=2)
+        # KL term from the ELBO with a uniform prior
+        diff = qy * torch.log(qy * self.num_embeddings + 1e-10)
+
+        return z_q, diff, ind
