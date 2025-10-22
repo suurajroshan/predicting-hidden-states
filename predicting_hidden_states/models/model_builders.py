@@ -57,7 +57,8 @@ def llama3_ascii_self_prediction_0_1b(use_self_prediction=True,
                                       use_hidden_state_prediction=True,
                                       use_information_bottleneck=True,
                                       self_prediction_information_bottleneck='continuous',
-                                      self_prediction_module=None) -> TransformerDecoderPHi:
+                                      self_prediction_module=None,
+                                      alpha: float = 1.0) -> TransformerDecoderPHi:
     """
     Config approximated from GPT2-small
     """
@@ -88,6 +89,7 @@ def llama3_ascii_self_prediction_0_1b(use_self_prediction=True,
         use_information_bottleneck=use_information_bottleneck,
         self_prediction_information_bottleneck=self_prediction_information_bottleneck,
         self_prediction_module=self_prediction_module,
+        alpha=alpha,
     )
 
 

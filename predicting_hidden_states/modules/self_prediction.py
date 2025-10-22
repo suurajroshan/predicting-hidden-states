@@ -40,6 +40,30 @@ def gaussian_kl(mu_q, log_var_q, mu_p, log_var_p):
     )
     return kl
 
+def geodesic_interpolation(outputs_p, outputs_m, alpha):
+    softmax = nn.Softmax(dim=-1)
+    p = softmax(outputs_p)
+    m = softmax(outputs_m)
+    # print('p:', p)
+    # print('m:', m)
+    # print(p.size(), p.max().item(), p.min().item())
+    # print(m.size(), m.max().item(), m.min().item())
+    map_p_s2 = torch.sqrt(p)
+    map_m_s2 = torch.sqrt(m)
+    # print(map_p_s2)
+    # print(map_m_s2)
+    # print(map_p_s2.size(), map_p_s2.max(), map_p_s2.min())
+    # print(map_m_s2.size(), map_m_s2.max(), map_m_s2.min())
+    theta = torch.acos(torch.sum(map_p_s2 * map_m_s2, dim=-1))
+    # print('theta:', theta)
+    # print(theta.size(), theta.max(), theta.min())
+    interpolated_map = (torch.sin((1-alpha)*theta) / torch.sin(theta)).unsqueeze(-1) * map_p_s2 + (torch.sin(alpha*theta) / torch.sin(theta)).unsqueeze(-1) * map_m_s2
+    # print('interpolated_map:', interpolated_map)
+    # print(interpolated_map.size(), interpolated_map.max(), interpolated_map.min())
+    p_prime = torch.square(interpolated_map).log()
+    # print('p_prime:', p_prime)
+    # print(p_prime.size(), p_prime.max(), p_prime.min())
+    return p_prime
 
 class PHiMLP(nn.Module):
     """
@@ -150,6 +174,7 @@ class PHiLayer(torch.nn.Module):
         straight_through_eval: bool = False,
         use_information_bottleneck: bool = True,
         use_hidden_state_prediction: bool = True,
+        alpha: float = 1.0,
     ):
         super().__init__()
         self.posterior_mlp = posterior_mlp
@@ -170,6 +195,7 @@ class PHiLayer(torch.nn.Module):
         self.straight_through_eval = straight_through_eval
         self.use_information_bottleneck = use_information_bottleneck
         self.use_hidden_state_prediction = use_hidden_state_prediction
+        self.alpha = alpha
 
     def forward(self,
                 h: torch.Tensor,
@@ -330,6 +356,13 @@ class PHiLayer(torch.nn.Module):
                                       prediction_input), dim=1)
             prediction_z = self.prior_prediction_mlp(self.sa_norm(prediction_input))
 
+            # steering phi loss
+            # z -> posterior distribution
+            # prediction_z -> output from the prior predictor
+            # by steering, we push the posterior distribution away from the prior prediction
+            z_prime = geodesic_interpolation(z, prediction_z, self.alpha)
+            z = z_prime
+            
             # Calculate PHi loss (KL divergence between prior(input) and posterior(target))
             # target_z = z
             # if self.detach_targets:
@@ -381,7 +414,6 @@ class PHiLayer(torch.nn.Module):
             return_dict['tokenwise_phi_losses_posterior'] = phi_losses_posterior
             loss = phi_losses_posterior.sum() / target_padding_mask.sum()
             return_dict['phi_loss_posterior'] = loss * self.next_loss_factor
-
 
             # log temperature
             return_dict["tokenwise_temperature"] = torch.ones(1)*self.quantizer.temperature
@@ -478,9 +510,12 @@ class vae_encoder(nn.Module):
         super().__init__()
 
         self.net = nn.Linear(tok_emb_dim, codebook_dim, bias=False)
+        self.log_softmax = nn.LogSoftmax(dim=-1)
 
     def forward(self, x):
-        return self.net(x)
+        x = self.net(x)
+        # x = self.log_softmax(x)
+        return x
 
 class vae_decoder(nn.Module):
     """
