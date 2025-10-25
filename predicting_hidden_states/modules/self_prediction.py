@@ -314,6 +314,9 @@ class PHiLayer(torch.nn.Module):
             if self.straight_through_eval and not self.training:
                 h_new = h
 
+            return_dict["h"] = h_new
+            return return_dict
+
         else:
             z = self.posterior_mlp(h)
             z_q, latent_losses, ind = self.quantizer(z)
@@ -420,12 +423,6 @@ class PHiLayer(torch.nn.Module):
 
             # log temperature
             return_dict["tokenwise_temperature"] = torch.ones(1)*self.quantizer.temperature
-
-            print('temperature ', self.quantizer.temperature)
-            print('self_critic_loss_factor ', self.self_critic_loss_factor)
-            print('next_loss_factor ', self.next_loss_factor)
-            print('reconstruction_loss_factor ', self.reconstruction_loss_factor)
-            
 
             if self.decoder_mlp is not None:
                 h_new = self.decoder_mlp(z_q)

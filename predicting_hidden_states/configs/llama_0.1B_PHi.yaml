@@ -68,7 +68,7 @@ max_total_steps: 100000 # Stop training after this many global steps
 max_steps_per_epoch: null # Optional: limit steps per epoch
 
 # Training mode
-train_whole_model: false # If false, freezes the base model and only trains the PHi layer
+train_whole_model: true # If false, freezes the base model and only trains the PHi layer
 ignore_main_training_loss: false # If true, trains only on PHi loss, ignoring next-token loss
 
 # Optimizer (AdamW)

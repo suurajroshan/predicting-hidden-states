@@ -741,7 +741,7 @@ class TransformerDecoderPHi(TransformerDecoder):
                 encoder_mask=encoder_mask,
                 input_pos=input_pos,
             )
-
+            
             if i == self.self_prediction_layer_position and self.self_prediction_layer is not None:
                 self_prediction_dict = self.self_prediction_layer(
                     h, padding_mask, mask=mask, input_pos=input_pos

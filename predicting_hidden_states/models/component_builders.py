@@ -332,8 +332,6 @@ def llama3_phi(
     rope = Llama3ScaledRoPE(dim=head_dim, max_seq_len=max_seq_len, base=rope_base, scale_factor=scale_factor)
     hidden_dim = intermediate_dim if intermediate_dim else scale_hidden_dim_for_mlp(embed_dim)
 
-    print(self_prediction_module)
-
     # Build the stack of Transformer layers
     layers = []
     for _ in range(num_layers):
@@ -384,11 +382,14 @@ def llama3_phi(
             quantizer_mlp = quantizer_module(num_embeddings=codebook_dim, embedding_dim=codeword_dim)
             posterior_mlp = vae_encoder(codebook_dim=codebook_dim, tok_emb_dim=codeword_dim)
             decoder_mlp = vae_decoder(input_channels=codeword_dim, tok_emb_dim=embed_dim)
+        else:
+            posterior_mlp = nn.Linear(embed_dim, 2 * embed_dim, bias=False)
+            quantizer_mlp = quantizer_module
+            decoder_mlp=nn.Linear(embed_dim, embed_dim, bias=False)
 
         # TODO: remove the dynamic assigning of embedding dim in prior attn, do it upstream
         if use_self_attention and phi_loss_factor > 0.0:
             # print('embed_dim: ',[embed_dim if quantizer_module is None else self_prediction_module.codeword_dim][0] )
-            print(embed_dim, ' embed_dim')
             prior_attention = MultiHeadAttention(
                 embed_dim=embed_dim,
                 num_heads=num_heads,
@@ -403,20 +404,15 @@ def llama3_phi(
                 attn_dropout=attn_dropout,
             )
 
-        else:
-            posterior_mlp = nn.Linear(embed_dim, 2 * embed_dim, bias=False)
-            quantizer_mlp = quantizer_module
-            decoder_mlp=nn.Linear(embed_dim, embed_dim, bias=False)
-
         self_prediction_layer = PHiLayer(
             d_model=embed_dim,
             posterior_mlp=posterior_mlp,
             quantizer_mlp=quantizer_mlp,
             decoder_mlp=decoder_mlp,
             prior_prediction_mlp=self_prediction_mlp(dim=embed_dim,
-                                                     hidden_dim=hidden_dim,
-                                                     output_dim=[codebook_dim if quantizer_module is not None else 2*embed_dim][0],
-                                                     num_layers=self_prediction_num_layers),
+                                                    hidden_dim=hidden_dim,
+                                                    output_dim=[codebook_dim if quantizer_module is not None else 2*embed_dim][0],
+                                                    num_layers=self_prediction_num_layers),
             prior_prediction_attention=prior_attention,
             sa_norm=RMSNorm(dim=embed_dim, eps=norm_eps) if prior_attention else None,
             self_critic_loss_factor=self_critic_loss_factor,
