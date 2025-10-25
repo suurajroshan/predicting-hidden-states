@@ -383,6 +383,10 @@ def llama3_phi(
             quantizer_mlp = quantizer_module(num_embeddings=codebook_dim, embedding_dim=codeword_dim)
             posterior_mlp = vae_encoder(codebook_dim=codebook_dim, tok_emb_dim=codeword_dim)
             decoder_mlp = vae_decoder(input_channels=codeword_dim, tok_emb_dim=embed_dim)
+        else:
+            posterior_mlp = nn.Linear(embed_dim, 2 * embed_dim, bias=False)
+            quantizer_mlp = quantizer_module
+            decoder_mlp=nn.Linear(embed_dim, embed_dim, bias=False)
 
         # TODO: remove the dynamic assigning of embedding dim in prior attn, do it upstream
         if use_self_attention and phi_loss_factor > 0.0:
@@ -400,11 +404,6 @@ def llama3_phi(
                 max_seq_len=max_seq_len,
                 attn_dropout=attn_dropout,
             )
-
-        else:
-            posterior_mlp = nn.Linear(embed_dim, 2 * embed_dim, bias=False)
-            quantizer_mlp = quantizer_module
-            decoder_mlp=nn.Linear(embed_dim, embed_dim, bias=False)
 
         self_prediction_layer = PHiLayer(
             d_model=embed_dim,

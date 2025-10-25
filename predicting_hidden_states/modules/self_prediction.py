@@ -289,6 +289,9 @@ class PHiLayer(torch.nn.Module):
             if self.straight_through_eval and not self.training:
                 h_new = h
 
+            return_dict["h"] = h_new
+            return return_dict
+
         else:
             z = self.posterior_mlp(h)
             z_q, latent_losses, ind = self.quantizer(z)
