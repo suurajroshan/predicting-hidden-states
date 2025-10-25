@@ -225,7 +225,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         Setup the recipe. This includes training state (if resume_from_checkpoint is True),
         model, tokenizer, loss, optimizer, sampler, and dataloader.
         """
-
+        
         if self._is_rank_zero:
             self._metric_logger = config.instantiate(cfg.metric_logger)
 
@@ -240,7 +240,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                 try:
                     run_id = self._metric_logger._wandb.run.id
                     output_dir = str(output_dir).replace("$WANDB_RUN_ID", run_id)
-                    print(run_id)
+                    print("run id: ", run_id)
                     output_dir = PosixPath(output_dir)
                 except AttributeError:
                     print(
@@ -861,12 +861,14 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         additional_logging_losses = {}
         if callable(getattr(self._model, "get_additional_losses", None)):
             next_token_prediction_loss = loss
+            print("next token prediction loss:", next_token_prediction_loss.item())
             if self._ignore_main_training_loss:
                 loss = 0.0
 
             additional_training_losses, additional_logging_losses = self._model.get_additional_losses()
             for loss_name, loss_val in additional_training_losses.items():
                 loss += loss_val
+                print(loss_name, loss_val.item())
             additional_logging_losses[
                 "next token prediction losses"
             ] = next_token_prediction_loss.detach()

@@ -359,12 +359,12 @@ class PHiLayer(torch.nn.Module):
             # z -> posterior distribution
             # prediction_z -> output from the prior predictor
             # by steering, we push the posterior distribution away from the prior prediction
-            if self.training == False:
-                categorical_m = F.log_softmax(prediction_z, dim=-1) # prior / log probs
-                categorical_p = F.log_softmax(z, dim=-1) # posterior / log probs
+            # if self.training == False:
+            #     categorical_m = F.log_softmax(prediction_z, dim=-1) # prior / log probs
+            #     categorical_p = F.log_softmax(z, dim=-1) # posterior / log probs
 
-                z_prime = geodesic_interpolation(categorical_p, categorical_m, self.alpha)
-                z = z_prime
+            #     z_prime = geodesic_interpolation(categorical_p, categorical_m, self.alpha)
+            #     z = z_prime
             
             # Calculate PHi loss (KL divergence between prior(input) and posterior(target))
             # target_z = z
@@ -398,7 +398,7 @@ class PHiLayer(torch.nn.Module):
 
             categroical_input = F.log_softmax(prediction_z, dim=-1) # prior / log probs
             categorical_target = F.log_softmax(target_z, dim=-1) # posterior / log probs
-            phi_losses_prior = F.kl_div(categroical_input, categorical_target.detach(), reduction='none', log_target=True)
+            phi_losses_prior = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)
             
             phi_losses_prior = phi_losses_prior.sum(dim=-1) * target_padding_mask
             return_dict['tokenwise_phi_losses_prior'] = phi_losses_prior 
@@ -411,7 +411,7 @@ class PHiLayer(torch.nn.Module):
 
             categroical_input = F.log_softmax(prediction_z_copy, dim=-1)
             categorical_target = F.log_softmax(z, dim=-1)
-            phi_losses_posterior = F.kl_div(categroical_input.detach(), categorical_target, reduction='none', log_target=True)
+            phi_losses_posterior = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)
 
             phi_losses_posterior = phi_losses_posterior.sum(dim=-1) * target_padding_mask
             return_dict['tokenwise_phi_losses_posterior'] = phi_losses_posterior
@@ -420,6 +420,12 @@ class PHiLayer(torch.nn.Module):
 
             # log temperature
             return_dict["tokenwise_temperature"] = torch.ones(1)*self.quantizer.temperature
+
+            print('temperature ', self.quantizer.temperature)
+            print('self_critic_loss_factor ', self.self_critic_loss_factor)
+            print('next_loss_factor ', self.next_loss_factor)
+            print('reconstruction_loss_factor ', self.reconstruction_loss_factor)
+            
 
             if self.decoder_mlp is not None:
                 h_new = self.decoder_mlp(z_q)
@@ -513,11 +519,9 @@ class vae_encoder(nn.Module):
         super().__init__()
 
         self.net = nn.Linear(tok_emb_dim, codebook_dim, bias=False)
-        self.log_softmax = nn.LogSoftmax(dim=-1)
 
     def forward(self, x):
         x = self.net(x)
-        # x = self.log_softmax(x)
         return x
 
 class vae_decoder(nn.Module):

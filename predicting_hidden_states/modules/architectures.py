@@ -1075,16 +1075,3 @@ class temperature_scheduler:
     def __call__(self, curr_step: int):
         t = cos_anneal(0, self.global_steps, self.temp_start, self.temp_end, curr_step)
         return t
-
-class beta_scheduler:
-    def __init__(self, saturation_steps : int = 5000, beta_max : float = 8.5e-3):
-    # The KL weight β is increased from 0 to 6.6 over the first 5000 updates
-    # "We divide the overall loss by 256 × 256 × 3, so that the weight of the KL term
-    # becomes β/192, where β is the KL weight."
-    # TODO: OpenAI uses 6.6/192 but kinda tricky to do the conversion here... about 5e-4 works for this repo so far... :\
-        self.saturation_steps = saturation_steps
-        self.beta_max = float(beta_max)
-    
-    def __call__(self, curr_step: int):
-        t = cos_anneal(0, self.saturation_steps, 0.0, self.beta_max, curr_step)
-        return t

@@ -1,5 +1,4 @@
 # Ignore files used for debugging
-slurm/
 *_debug.*
 tmp/
 

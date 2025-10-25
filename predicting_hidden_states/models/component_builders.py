@@ -388,6 +388,7 @@ def llama3_phi(
         # TODO: remove the dynamic assigning of embedding dim in prior attn, do it upstream
         if use_self_attention and phi_loss_factor > 0.0:
             # print('embed_dim: ',[embed_dim if quantizer_module is None else self_prediction_module.codeword_dim][0] )
+            print(embed_dim, ' embed_dim')
             prior_attention = MultiHeadAttention(
                 embed_dim=embed_dim,
                 num_heads=num_heads,
