@@ -279,6 +279,7 @@ def llama3_phi(
     self_prediction_information_bottleneck : Optional[str] = 'continuous',
     self_prediction_module: Optional[Dict] = None,
     alpha : float = 1.0,
+    steer_phi_loss: bool = False,
 ) -> TransformerDecoderPHi:
     """
     Factory function to build a Llama 3-style Transformer model integrated
@@ -425,6 +426,7 @@ def llama3_phi(
             use_hidden_state_prediction=use_hidden_state_prediction,
             use_information_bottleneck=use_information_bottleneck,
             alpha = alpha,
+            steer_phi_loss=steer_phi_loss,
         )
 
         wandb.watch(self_prediction_layer, log='all') # watching phi model

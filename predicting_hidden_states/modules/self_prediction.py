@@ -43,25 +43,11 @@ def gaussian_kl(mu_q, log_var_q, mu_p, log_var_p):
 def geodesic_interpolation(outputs_p, outputs_m, alpha):
     p = outputs_p.exp() + 1e-9
     m = outputs_m.exp() + 1e-9
-    # print('p:', p)
-    # print('m:', m)
-    # print(p.size(), p.max().item(), p.min().item())
-    # print(m.size(), m.max().item(), m.min().item())
     map_p_s2 = torch.sqrt(p)
     map_m_s2 = torch.sqrt(m)
-    # print(map_p_s2)
-    # print(map_m_s2)
-    # print(map_p_s2.size(), map_p_s2.max(), map_p_s2.min())
-    # print(map_m_s2.size(), map_m_s2.max(), map_m_s2.min())
     theta = torch.acos(torch.sum(map_p_s2 * map_m_s2, dim=-1))
-    # print('theta:', theta)
-    # print(theta.size(), theta.max(), theta.min())
     interpolated_map = (torch.sin((1-alpha)*theta) / (torch.sin(theta) + 1e-8) ).unsqueeze(-1) * map_p_s2 + (torch.sin(alpha*theta) / (torch.sin(theta) + 1e-8)).unsqueeze(-1) * map_m_s2
-    # print('interpolated_map:', interpolated_map)
-    # print(interpolated_map.size(), interpolated_map.max(), interpolated_map.min())
     p_prime = torch.square(interpolated_map).log()
-    # print('p_prime:', p_prime)
-    # print(p_prime.size(), p_prime.max(), p_prime.min())
     return p_prime
 
 class PHiMLP(nn.Module):
@@ -174,6 +160,7 @@ class PHiLayer(torch.nn.Module):
         use_information_bottleneck: bool = True,
         use_hidden_state_prediction: bool = True,
         alpha: float = 1.0,
+        steer_phi_loss: bool = False,
     ):
         super().__init__()
         self.posterior_mlp = posterior_mlp
@@ -195,6 +182,7 @@ class PHiLayer(torch.nn.Module):
         self.use_information_bottleneck = use_information_bottleneck
         self.use_hidden_state_prediction = use_hidden_state_prediction
         self.alpha = alpha
+        self.steer_phi_loss = steer_phi_loss
 
     def forward(self,
                 h: torch.Tensor,
@@ -362,12 +350,23 @@ class PHiLayer(torch.nn.Module):
             # z -> posterior distribution
             # prediction_z -> output from the prior predictor
             # by steering, we push the posterior distribution away from the prior prediction
-            # if self.training == False:
-            #     categorical_m = F.log_softmax(prediction_z, dim=-1) # prior / log probs
-            #     categorical_p = F.log_softmax(z, dim=-1) # posterior / log probs
+            
+            #compute phi loss pre steering
+            categroical_input = F.log_softmax(prediction_z, dim=-1) # prior / log probs
+            categorical_target = F.log_softmax(z, dim=-1) # posterior / log probs
+            # detaching as we do not train using this pre computed phi loss
+            phi_losses_presteer = F.kl_div( F.log_softmax(prediction_z, dim=-1).detach(), \
+                                           F.log_softmax(z, dim=-1).detach(), \
+                                            reduction='none', \
+                                            log_target=True)
+            return_dict["tokenwise_presteer_phi_losses"] = phi_losses_presteer.sum(-1) * padding_mask
 
-            #     z_prime = geodesic_interpolation(categorical_p, categorical_m, self.alpha)
-            #     z = z_prime
+            if self.training == False and self.steer_phi_loss:
+                categorical_m = F.log_softmax(prediction_z, dim=-1) # prior / log probs
+                categorical_p = F.log_softmax(z, dim=-1) # posterior / log probs
+
+                z_prime = geodesic_interpolation(categorical_p, categorical_m, self.alpha)
+                z = z_prime
             
             # Calculate PHi loss (KL divergence between prior(input) and posterior(target))
             # target_z = z
@@ -404,7 +403,7 @@ class PHiLayer(torch.nn.Module):
             phi_losses_prior = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)
             
             phi_losses_prior = phi_losses_prior.sum(dim=-1) * target_padding_mask
-            return_dict['tokenwise_phi_losses_prior'] = phi_losses_prior 
+            return_dict['tokenwise_phi_losses'] = phi_losses_prior 
             loss = phi_losses_prior.sum() / target_padding_mask.sum()
             return_dict['phi_loss_prior'] = loss * self.next_loss_factor
 
@@ -417,7 +416,6 @@ class PHiLayer(torch.nn.Module):
             phi_losses_posterior = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)
 
             phi_losses_posterior = phi_losses_posterior.sum(dim=-1) * target_padding_mask
-            return_dict['tokenwise_phi_losses_posterior'] = phi_losses_posterior
             loss = phi_losses_posterior.sum() / target_padding_mask.sum()
             return_dict['phi_loss_posterior'] = loss * self.next_loss_factor
 

@@ -684,6 +684,8 @@ def pfa_training_evaluation(recipe,
     interestingness_criterion = "next_token_losses"
     if "phi_losses" in datapoints[0]:
         losses.append("phi_losses")
+        losses.append("latent_loss")
+        losses.append("presteer_phi_losses")
         interestingness_criterion = "phi_losses"
 
     level_names = [
@@ -733,15 +735,19 @@ def pfa_training_evaluation(recipe,
                 interestingness_ratio = np.mean(interesting_means) / np.mean(
                     uninteresting_means
                 )
-        fig = go.Figure(data=[go.Bar(x=levels, y=means)])
+    means_grouped = [[losses_vs_learning_levels_statistics[loss][level]["mean"] for level in levels] for loss in losses]
+    fig = go.Figure()
+    for i, l in enumerate(range(len(losses))):
+        fig.add_trace(go.Bar(x=levels, y=means_grouped[l], name=losses[i].capitalize()))
         # add level names
-        fig.update_layout(
-            title=f"{loss.capitalize()}",
-            xaxis_title="Learning level",
-            yaxis_title="",
-            xaxis=dict(tickvals=levels, ticktext=[level_names[l] for l in levels]),
-        )
-        plotly_figure_dict[loss] = fig
+    fig.update_layout(
+        title=f"Losses per learning level",
+        xaxis_title="Learning level",
+        yaxis_title="",
+        xaxis=dict(tickvals=levels, ticktext=[level_names[l] for l in levels]),
+    )
+    plotly_figure_dict["losses"] = fig
+
     recipe._model.train()
     eval_values_dict = {
         "interestingness_ratio": interestingness_ratio,

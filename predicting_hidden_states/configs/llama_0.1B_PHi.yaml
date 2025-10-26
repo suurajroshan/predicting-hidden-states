@@ -34,6 +34,9 @@ model:
   detach_hidden_states: false # If true, detaches hidden states before the PHi layer
   detach_targets: false # If true, detaches the posterior targets for the PHi loss
   
+  # steer the phi loss at inference time
+  steer_phi_loss: true
+
   # PHi layer behavior during training and inference
   deterministic_at_inference: false # If true, use the mean of the posterior instead of sampling at inference
   chance_to_deterministic: 0.0 # Probability of using deterministic sampling during training
@@ -120,7 +123,7 @@ checkpointer:
   #   - model-00001-of-00002.safetensors
   #   - model-00002-of-00002.safetensors
   recipe_checkpoint: null
-  output_dir: /home/woody/iwbi/iwbi106h/suuraj/models/self_prediction_models/learning_levels_$WANDB_RUN_ID/
+  output_dir: /home/woody/iwbi/iwbi106h/suuraj/models/self-prediction-models/learning_levels_$WANDB_RUN_ID/
   # output_dir: checkpoints/llama_3B_PHi_$WANDB_RUN_ID/
   model_type: IDSIA
 
