@@ -109,20 +109,41 @@ def generate_per_token_losses(recipe, batch):
     labels = torch.hstack(  # shift labels by one (for next token prediction)
         (labels[..., 1:], recipe.ignore_labels_cache[: labels.shape[0]])
     )
-    logits = recipe._model(**batch)
+    logits, logits_prime = recipe._model(**batch)
     if type(logits) is list:
         logits = torch.cat(logits, dim=1)
+    if type(logits_prime) is list:
+        logits_prime = torch.cat(logits_prime, dim=1)
     losses = torch.nn.functional.cross_entropy(
         logits.view(-1, logits.size(-1)),
         labels.view(-1),
         reduction="none",
         ignore_index=recipe._loss_fn.ignore_index,
     ).view_as(labels)
+    losses_prime = torch.nn.functional.cross_entropy(
+        logits_prime.view(-1, logits_prime.size(-1)),
+        labels.view(-1),
+        reduction="none",
+        ignore_index=recipe._loss_fn.ignore_index,
+    ).view_as(labels)
+    # compute logit divergence
+    assert logits_prime.size() == logits.size(), \
+        f"Logits and logits prime must have the same shape for KL divergence computation"
+    log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+    log_probs_prime = torch.nn.functional.log_softmax(logits_prime, dim=-1)
+    logit_divergence = torch.nn.functional.kl_div(
+        log_probs_prime, 
+        log_probs,
+        reduction='none', 
+        log_target=True
+        ).sum(dim=-1).detach()
     decoded_tokens = decode_token_by_token(batch["tokens"], tokenizer=recipe._tokenizer)
     per_token_losses = {
         "tokens": batch["tokens"],
         "decoded_tokens": decoded_tokens,
         "next_token_losses": losses,
+        "next_token_losses_prime": losses_prime,
+        "logit_divergence": logit_divergence,
     }
     additional_losses = recipe._model.self_prediction_losses.losses
     recipe._model.self_prediction_losses.reset()
@@ -227,13 +248,14 @@ def process_data(
         # Calculate per-token losses
         per_token_losses = generate_per_token_losses(recipe,
                                                      model_batch)
-
+        
         for key, value in per_token_losses.items():
             if 'next' in key:
                 per_token_losses[key] = torch.cat([torch.zeros_like(value[:, 0:1]), value], dim=1)
             if key == 'next_token_losses':
                 per_token_losses[key] = per_token_losses[key][:, :-1]
-
+            if key == 'next_token_losses_prime':
+                per_token_losses[key] = per_token_losses[key][:, :-1]
 
         # split into datapoints
         current_datapoints = []
@@ -681,6 +703,8 @@ def pfa_training_evaluation(recipe,
         num_datapoints=num_datapoints,
     )
     losses = ["next_token_losses"]
+    losses.append("next_token_losses_prime")
+    losses.append("logit_divergence")
     interestingness_criterion = "next_token_losses"
     if "phi_losses" in datapoints[0]:
         losses.append("phi_losses")
@@ -733,15 +757,36 @@ def pfa_training_evaluation(recipe,
                 interestingness_ratio = np.mean(interesting_means) / np.mean(
                     uninteresting_means
                 )
-        fig = go.Figure(data=[go.Bar(x=levels, y=means)])
+
+    # pop the logit divergence losses
+    # group logit divergence per learning level
+    logit_divergence_statistics = losses_vs_learning_levels_statistics.pop("logit_divergence")
+    logit_divergence_means = [logit_divergence_statistics[level]["mean"] for level in levels]
+    losses.pop(losses.index("logit_divergence"))
+    fig_logits = go.Figure(data=[go.Bar(x=levels, y=logit_divergence_means)])
+    fig_logits.update_layout(
+        title=f"Logit divergence per learning level",
+        xaxis_title="Learning level",
+        yaxis_title="",
+        xaxis=dict(tickvals=levels, ticktext=[level_names[l] for l in levels]),
+    )
+    plotly_figure_dict["divergence_logits"] = fig_logits
+
+    # group losses per learning level
+    means_grouped = [[losses_vs_learning_levels_statistics[loss][level]["mean"] for level in levels] for loss in losses]
+    fig = go.Figure()
+    for i, l in enumerate(range(len(losses))):
+        fig.add_trace(go.Bar(x=levels, y=means_grouped[l], name=losses[i].capitalize()))
         # add level names
-        fig.update_layout(
-            title=f"{loss.capitalize()}",
-            xaxis_title="Learning level",
-            yaxis_title="",
-            xaxis=dict(tickvals=levels, ticktext=[level_names[l] for l in levels]),
-        )
-        plotly_figure_dict[loss] = fig
+    fig.update_layout(
+        title=f"Losses per learning level",
+        xaxis_title="Learning level",
+        yaxis_title="",
+        xaxis=dict(tickvals=levels, ticktext=[level_names[l] for l in levels]),
+    )
+    plotly_figure_dict["losses"] = fig
+
+
     recipe._model.train()
     eval_values_dict = {
         "interestingness_ratio": interestingness_ratio,

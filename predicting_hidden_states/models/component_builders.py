@@ -278,6 +278,8 @@ def llama3_phi(
     use_hidden_state_prediction: bool = True,
     self_prediction_information_bottleneck : Optional[str] = 'continuous',
     self_prediction_module: Optional[Dict] = None,
+    fork_layer_position : int = 10,
+    depth_efficiency: bool = False,
 ) -> TransformerDecoderPHi:
     """
     Factory function to build a Llama 3-style Transformer model integrated
@@ -362,7 +364,30 @@ def llama3_phi(
     tok_embeddings = nn.Embedding(vocab_size, embed_dim)
     nn.init.uniform_(tok_embeddings.weight, a=-1e-4, b=1e-4)
     output_proj = nn.Linear(embed_dim, vocab_size, bias=False) if not tied_embeddings else TiedLinear(tok_embeddings)
+    output_proj_prime = nn.Linear(embed_dim, vocab_size, bias=False) if not tied_embeddings else TiedLinear(tok_embeddings)
 
+    if depth_efficiency:
+        self_attn = MultiHeadAttention(
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            num_kv_heads=num_kv_heads,
+            head_dim=head_dim,
+            q_proj=nn.Linear(embed_dim, num_heads * head_dim, bias=False),
+            k_proj=nn.Linear(embed_dim, num_kv_heads * head_dim, bias=False),
+            v_proj=nn.Linear(embed_dim, num_kv_heads * head_dim, bias=False),
+            output_proj=nn.Linear(embed_dim, embed_dim, bias=False),
+            pos_embeddings=rope,
+            max_seq_len=max_seq_len,
+            attn_dropout=attn_dropout,
+        )
+        mlp = llama3_mlp(dim=embed_dim, hidden_dim=hidden_dim)
+        early_prediction_layer = TransformerSelfAttentionLayer(
+                attn=self_attn,
+                mlp=mlp,
+                sa_norm=RMSNorm(dim=embed_dim, eps=norm_eps),
+                mlp_norm=RMSNorm(dim=embed_dim, eps=norm_eps),
+            )
+        
     # Conditionally build the PHi self-prediction layer
     self_prediction_layer = None
     if use_self_prediction:
@@ -438,8 +463,13 @@ def llama3_phi(
         head_dim=head_dim,
         norm=RMSNorm(embed_dim, eps=norm_eps),
         output=output_proj,
+        output_prime=output_proj_prime,
         tied_embeddings=tied_embeddings,
         output_hidden_states=None,
         self_prediction_layer=self_prediction_layer,
         self_prediction_layer_position=self_prediction_layer_position,
-    )
+        depth_efficiency=depth_efficiency,
+        fork_layer_position=fork_layer_position,
+        early_prediction_layer=early_prediction_layer if depth_efficiency else None,
+    )    
+

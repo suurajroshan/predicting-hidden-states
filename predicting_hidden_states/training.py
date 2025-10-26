@@ -29,6 +29,7 @@ from torchtune.training import DummyProfiler, PROFILER_KEY
 from torchtune.training.activations import apply_selective_activation_checkpointing
 from utils.meters import MultiMeter
 from huggingface_hub import snapshot_download
+from torch.nn import functional as F
 
 from tqdm import tqdm
 
@@ -840,7 +841,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         # Shape [b, s], needed for the loss not the model
         labels = batch.pop("labels")
 
-        logits = self._model(**batch)
+        logits, logits_prime = self._model(**batch)
 
         # Shift labels to compute loss
         # equivalent to doing labels[..., 1:] and logits[..., :-1, :]
@@ -851,16 +852,34 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         if not isinstance(logits, list):
             labels = labels.reshape(-1)
             logits = logits.reshape(-1, logits.size(-1))
+            logits_prime = logits_prime.reshape(-1, logits_prime.size(-1))
+
+        # logit divergence 
+        assert torch.cat(logits_prime, dim=1).size() == torch.cat(logits, dim=1).size(), \
+            f"Logits and logits prime must have the same shape for KL divergence computation"
+        log_probs = F.log_softmax(torch.cat(logits, dim=1), dim=-1) if isinstance(logits, list) else F.log_softmax(logits, dim=-1)
+        log_probs_prime = F.log_softmax(torch.cat(logits_prime, dim=1), dim=-1) if isinstance(logits_prime, list) else F.log_softmax(logits_prime, dim=-1)
+        logit_divergence = F.kl_div(
+            log_probs_prime, 
+            log_probs,
+            reduction='none', 
+            log_target=True
+        ).sum(dim=-1).detach()
+        logit_divergence = logit_divergence.mean()
 
         # Compute loss
         loss = self._loss_fn(logits, labels)
         assert loss.numel() == 1, f"Loss should be a scalar. Use a loss function that aggregates the loss!"
+        loss_prime = self._loss_fn(logits_prime, labels)
+        assert loss_prime.numel() == 1, f"Loss should be a scalar. Use a loss function that aggregates the loss!"
         # free logits otherwise it peaks backward memory
         del logits
+        del logits_prime
 
         additional_logging_losses = {}
         if callable(getattr(self._model, "get_additional_losses", None)):
             next_token_prediction_loss = loss
+            shortcut_next_token_prediction_loss = loss_prime
             if self._ignore_main_training_loss:
                 loss = 0.0
 
@@ -870,6 +889,12 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
             additional_logging_losses[
                 "next token prediction losses"
             ] = next_token_prediction_loss.detach()
+            additional_logging_losses[
+                "shortcut next token prediction losses"
+            ] = shortcut_next_token_prediction_loss.detach()
+            additional_logging_losses[
+                "logit divergence"
+            ] = logit_divergence.detach()
 
         return loss, additional_logging_losses
 

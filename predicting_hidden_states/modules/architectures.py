@@ -454,6 +454,7 @@ class TransformerDecoder(nn.Module):
         head_dim: int,
         norm: nn.Module,
         output: Union[nn.Linear, Callable],
+        output_prime: Union[nn.Linear, Callable],
         num_layers: Optional[int] = None,
         output_hidden_states: Optional[list[int]] = None,
         tied_embeddings: bool = True,
@@ -474,6 +475,7 @@ class TransformerDecoder(nn.Module):
         self.layers = layers
         self.norm = norm
         self.output = output
+        self.output_prime = output_prime
         self.output_hidden_states = output_hidden_states or []
         self.max_seq_len = max_seq_len
         self.num_heads = num_heads
@@ -545,6 +547,14 @@ class TransformerDecoder(nn.Module):
         """torchtune.modules.transformer.TransformerDecoder.chunked_output"""
         return [
             self.output(chunk)
+            for chunk in last_hidden_state.chunk(self.num_output_chunks, dim=1)
+        ]
+
+    @torch.compiler.disable
+    def chunked_output_prime(self, last_hidden_state: torch.Tensor) -> list[torch.Tensor]:
+        """torchtune.modules.transformer.TransformerDecoder.chunked_output"""
+        return [
+            self.output_prime(chunk)
             for chunk in last_hidden_state.chunk(self.num_output_chunks, dim=1)
         ]
 
@@ -670,6 +680,9 @@ class TransformerDecoderPHi(TransformerDecoder):
         self_prediction_layer: Optional[nn.Module] = None,
         self_prediction_layer_position: Optional[int] = None,
         pad_token_id: int = 0,
+        depth_efficiency: bool = False,
+        fork_layer_position : int = 10,
+        early_prediction_layer: Optional[nn.Module] = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -679,6 +692,9 @@ class TransformerDecoderPHi(TransformerDecoder):
         if self_prediction_layer_position is None:
             self_prediction_layer_position = len(self.layers) - 1
         self.self_prediction_layer_position = self_prediction_layer_position
+        self.depth_efficiency = depth_efficiency
+        self.fork_layer_position = fork_layer_position
+        self.early_prediction_layer = early_prediction_layer
 
     def forward(
         self,
@@ -742,6 +758,15 @@ class TransformerDecoderPHi(TransformerDecoder):
                 input_pos=input_pos,
             )
 
+            # TODO: implementing parameter sharing for now
+            if self.depth_efficiency and i == self.fork_layer_position:
+                h_prime = self.early_prediction_layer(h)
+                if self.num_output_chunks > 0:
+                    output_prime = self.chunked_output_prime(h_prime)
+                else:
+                    output_prime = self.output_prime(h_prime).float()
+
+
             if i == self.self_prediction_layer_position and self.self_prediction_layer is not None:
                 self_prediction_dict = self.self_prediction_layer(
                     h, padding_mask, mask=mask, input_pos=input_pos
@@ -766,7 +791,7 @@ class TransformerDecoderPHi(TransformerDecoder):
 
         # Output list if hidden states are requested, otherwise just the output
         output = output if not hidden else [*hidden, output]
-        return output
+        return output, output_prime
 
     def get_additional_losses(self) -> dict:
         """
