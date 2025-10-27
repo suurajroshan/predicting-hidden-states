@@ -2,7 +2,7 @@
 #
 #SBATCH --partition=a100
 #SBATCH --gres=gpu:a100:1
-#SBATCH --time=08:00:00
+#SBATCH --time=04:00:00
 #SBATCH --error=slurm/logs/steering-phi-loss-%j.err
 #SBATCH --output=slurm/logs/steering-phi-loss-%j.out
 
@@ -30,7 +30,7 @@ python exp_script.py \
     temperature_scheduler.temp_end=0.1 \
     temperature_scheduler.global_steps=30000 \
     batch_size=16 \
-    model.alpha=0
+    model.alpha=-0.25
 
 # self_critic_loss_factor = 0.1
 # next_hidden_loss_factor = 0.001 \ 0.005 \ 0.0001

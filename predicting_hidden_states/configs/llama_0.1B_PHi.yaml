@@ -139,7 +139,7 @@ evaluate_every_n_steps: 1000
 
 # Logging configuration
 output_dir: /home/woody/iwbi/iwbi106h/suuraj/wandb_logs # Fallback output directory
-log_every_n_steps: 1000
+log_every_n_steps: 50
 log_peak_memory_stats: false
 
 metric_logger:

@@ -361,12 +361,12 @@ class PHiLayer(torch.nn.Module):
                                             log_target=True)
             return_dict["tokenwise_presteer_phi_losses"] = phi_losses_presteer.sum(-1) * padding_mask
 
-            if self.training == False and self.steer_phi_loss:
-                categorical_m = F.log_softmax(prediction_z, dim=-1) # prior / log probs
-                categorical_p = F.log_softmax(z, dim=-1) # posterior / log probs
+            # if self.training == False and self.steer_phi_loss:
+            categorical_m = F.log_softmax(prediction_z, dim=-1) # prior / log probs
+            categorical_p = F.log_softmax(z, dim=-1) # posterior / log probs
 
-                z_prime = geodesic_interpolation(categorical_p, categorical_m, self.alpha)
-                z = z_prime
+            z_prime = geodesic_interpolation(categorical_p, categorical_m, self.alpha)
+            z = z_prime
             
             # Calculate PHi loss (KL divergence between prior(input) and posterior(target))
             # target_z = z
