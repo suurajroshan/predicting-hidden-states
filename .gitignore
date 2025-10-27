@@ -1,6 +1,7 @@
 # Ignore files used for debugging
 *_debug.*
 tmp/
+*/wandb
 
 # Ignore caches
 *.pyc

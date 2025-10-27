@@ -25,5 +25,5 @@ printf "\nRunning job in $JOB_DIR\n"
 python exp_script.py \
     metric_logger.mode=offline \
     model.depth_efficiency=True \
-    model.fork_layer_position=10 \
+    model.fork_layer_position=9 \
     train_shortcut_loss=True

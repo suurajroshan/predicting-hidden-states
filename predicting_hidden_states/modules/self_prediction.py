@@ -46,7 +46,7 @@ def geodesic_interpolation(outputs_p, outputs_m, alpha):
     map_p_s2 = torch.sqrt(p)
     map_m_s2 = torch.sqrt(m)
     theta = torch.acos(torch.sum(map_p_s2 * map_m_s2, dim=-1))
-    interpolated_map = (torch.sin((1-alpha)*theta) / (torch.sin(theta) + 1e-8) ).unsqueeze(-1) * map_p_s2 + (torch.sin(alpha*theta) / (torch.sin(theta) + 1e-8)).unsqueeze(-1) * map_m_s2
+    interpolated_map = (torch.sin((1-alpha)*theta) / (torch.sin(theta) + 1e-9) ).unsqueeze(-1) * map_p_s2 + (torch.sin(alpha*theta) / (torch.sin(theta) + 1e-9)).unsqueeze(-1) * map_m_s2
     p_prime = torch.square(interpolated_map).log()
     return p_prime
 
