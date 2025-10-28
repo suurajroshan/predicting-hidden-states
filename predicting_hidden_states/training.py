@@ -860,7 +860,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
 
         additional_logging_losses = {}
         if callable(getattr(self._model, "get_additional_losses", None)):
-            next_token_prediction_loss = loss
+            next_token_prediction_loss = loss.clone()
             if self._ignore_main_training_loss:
                 loss = 0.0
 
