@@ -2,6 +2,7 @@
 *_debug.*
 tmp/
 */wandb
+checkpoints/
 
 # Ignore caches
 *.pyc
