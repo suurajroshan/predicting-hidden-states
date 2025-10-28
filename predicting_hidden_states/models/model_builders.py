@@ -105,6 +105,8 @@ def llama3_2_selfprediction_3b(use_self_prediction=True,
                                max_seq_len=2048,
                                use_hidden_state_prediction=True,
                                use_information_bottleneck=True,
+                               self_prediction_information_bottleneck='continuous',
+                                self_prediction_module=None,
                                ) -> TransformerDecoderPHi:
     return llama3_phi(
         vocab_size=128_256,
@@ -132,4 +134,6 @@ def llama3_2_selfprediction_3b(use_self_prediction=True,
         straight_through_eval=straight_through_eval,
         use_hidden_state_prediction=use_hidden_state_prediction,
         use_information_bottleneck=use_information_bottleneck,
+        self_prediction_information_bottleneck=self_prediction_information_bottleneck,
+        self_prediction_module=self_prediction_module,
     )

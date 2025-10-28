@@ -10,6 +10,7 @@ import os
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol, Union
+from enum import Enum
 
 import torch
 from safetensors.torch import save_file
@@ -22,7 +23,7 @@ from torchtune.rlhf.utils import reward_hf_to_tune, reward_tune_to_hf
 from torchtune.training.checkpointing._utils import (
     FormattedCheckpointFiles,
     get_path,
-    ModelType,
+    # ModelType,
     safe_torch_load,
     # save_config
 )
@@ -31,6 +32,53 @@ from torchtune.training.checkpointing._checkpointer import _CheckpointerInterfac
 from torchtune.utils._logging import get_logger, log_rank_zero
 
 logger = get_logger("DEBUG")
+
+class ModelType(Enum):
+    """ModelType is used by the checkpointer to distinguish between different model architectures.
+
+    If you are adding a new model that follows a different format than those in the repo already,
+    you can add a new ModelType to gate on weight conversion logic unique to that model.
+
+    Attributes:
+        GEMMA (str): Gemma family of models. See :func:`~torchtune.models.gemma.gemma`
+        GEMMA2 (str): Gemma 2 family of models. See :func:`~torchtune.models.gemma2.gemma2`
+        LLAMA2 (str): Llama2 family of models. See :func:`~torchtune.models.llama2.llama2`
+        LLAMA3 (str): Llama3 family of models. See :func:`~torchtune.models.llama3.llama3`
+        LLAMA3_2 (str): Llama3.2 family of models. See :func:`~torchtune.models.llama3_2.llama3_2`
+        LLAMA3_VISION (str): LLama3 vision family of models. See :func:`~torchtune.models.llama3_2_vision.llama3_2_vision_decoder`
+        MISTRAL (str): Mistral family of models. See :func:`~torchtune.models.mistral.mistral`
+        PHI3_MINI (str): Phi-3 family of models. See :func:`~torchtune.models.phi3.phi3`
+        PHI4 (str): Phi-4 family of models. See :func:`~torchtune.models.phi4.phi4`
+        REWARD (str): A Llama2, Llama3, or Mistral model with a classification head projecting
+            to a single class for reward modelling.
+            See :func:`~torchtune.models.mistral.mistral_reward_7b` or :func:`~torchtune.models.llama2.llama2_reward_7b`
+        QWEN2 (str): Qwen2 family of models. See :func:`~torchtune.models.qwen2.qwen2`
+        CLIP_TEXT (str): CLIP text encoder. See :func:`~torchtune.models.clip.clip_text_encoder_large`
+        T5_ENCODER (str): T5 text encoder. See :func:`~torchtune.models.t5.t5_v1_1_xxl_encoder`
+
+    Example:
+        >>> # Usage in a checkpointer class
+        >>> def load_checkpoint(self, ...):
+        >>>     ...
+        >>>     if self._model_type == MY_NEW_MODEL:
+        >>>         state_dict = my_custom_state_dict_mapping(state_dict)
+    """
+
+    GEMMA: str = "gemma"
+    GEMMA2: str = "gemma2"
+    LLAMA2: str = "llama2"
+    LLAMA3: str = "llama3"
+    LLAMA3_2: str = "llama3_2"
+    LLAMA3_SELF_PREDICTION: str = "llama3_self_prediction"
+    LLAMA3_SELF_PREDICTION_QUANTIZED: str = "llama3_self_prediction_quantized"
+    LLAMA3_VISION: str = "llama3_vision"
+    MISTRAL: str = "mistral"
+    PHI3_MINI: str = "phi3_mini"
+    PHI4: str = "phi4"
+    REWARD: str = "reward"
+    QWEN2: str = "qwen2"
+    CLIP_TEXT: str = "clip_text"
+    T5_ENCODER: str = "t5_encoder"
 
 
 class FullModelTorchTuneCheckpointer(_CheckpointerInterface):
@@ -561,7 +609,7 @@ class FullModelHFCheckpointer(_CheckpointerInterface):
         )
 
         # save config.json to output_dir
-        save_config(self._output_dir, self._config)
+        # save_config(self._output_dir, self._config)
 
         # recipe_checkpoint contains the recipe state. This should be available if
         # resume_from_checkpoint is True
@@ -736,6 +784,8 @@ class FullModelHFCheckpointer(_CheckpointerInterface):
                     "Safe tensors support for LLaMA3 Vision will be added soon. Pleaee use the FullModelMetaCheckpointer for now."
                 )
             elif self._model_type == ModelType.LLAMA3_SELF_PREDICTION:
+                state_dict[training.MODEL_KEY] = state_dict[training.MODEL_KEY]
+            elif self._model_type == ModelType.LLAMA3_SELF_PREDICTION_QUANTIZED:
                 state_dict[training.MODEL_KEY] = state_dict[training.MODEL_KEY]
             else:
                 state_dict[training.MODEL_KEY] = convert_weights.tune_to_hf(

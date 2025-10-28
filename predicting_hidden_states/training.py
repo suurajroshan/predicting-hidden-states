@@ -240,7 +240,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                 try:
                     run_id = self._metric_logger._wandb.run.id
                     output_dir = str(output_dir).replace("$WANDB_RUN_ID", run_id)
-                    print(run_id)
+                    print("run id: ", run_id)
                     output_dir = PosixPath(output_dir)
                 except AttributeError:
                     print(

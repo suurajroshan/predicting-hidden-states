@@ -1,25 +1,39 @@
 #!/bin/bash -l
 #
-#SBATCH --partition=v100
-#SBATCH --gres=gpu:v100:1
-#SBATCH --time=12:00:00
-#SBATCH --error=slurm/logs/phi-moreinf-%j.err
-#SBATCH --output=slurm/logs/phi-moreinf-%j.out
+#SBATCH --partition=a100
+#SBATCH --gres=gpu:a100:1
+#SBATCH --time=08:00:00
+#SBATCH --error=slurm/logs/llama3b-%j.err
+#SBATCH --output=slurm/logs/llama3b-%j.out
 
 unset SLURM_EXPORT_ENV
 
 module load python
 conda activate hsp
 
-/home/woody/iwbi/iwbi106h/software/private/conda/envs/hsp/bin/python /home/woody/iwbi/iwbi106h/suuraj/codes/hidden-state-predictions/hidden-state-prediction-master/hidden_state_prediction/exp_script.py \
-    metric_logger.mode=offline \
-    recon_loss_weight=0.001 \
+WORK_DIR=/home/woody/iwbi/iwbi106h/suuraj
+JOB_DIR=$WORK_DIR/slurm_scratch/llama-3B/$SLURM_JOB_ID
+mkdir -p $JOB_DIR
+
+rsync -av --exclude='__pycache__/' \
+    --exclude='slurm/logs/' \
+    --exclude='wandb/' \
+    --exclude='checkpoints/' \
+    $WORK_DIR/codes/predicting-hidden-states/predicting_hidden_states/ \
+    $JOB_DIR
+cd $JOB_DIR
+printf "\nRunning job in $JOB_DIR\n"
+
+python exp_script.py \
+    metric_logger.mode=online \
+    model.self_prediction_module.reconstruction_loss_factor=0.001 \
     model.self_critic_loss_factor=0.1 \
-    model.next_hidden_loss_factor=0.0001 \
+    model.phi_loss_factor=0.0001 \
     temperature_scheduler.temp_start=1 \
     temperature_scheduler.temp_end=0.1 \
     temperature_scheduler.global_steps=30000 \
-    # batch_size=16 
+    batch_size=8 \
+    # model.self_prediction_information_bottleneck=continuous
 
 # self_critic_loss_factor = 0.1
 # next_hidden_loss_factor = 0.001 \ 0.005 \ 0.0001

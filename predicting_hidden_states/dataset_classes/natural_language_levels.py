@@ -774,7 +774,8 @@ def slim_pajama_dataset(tokenizer):
 
 def combined_reasoning_and_icl_dataset(tokenizer,
                                        math_location=None,
-                                       gsm_location=None):
+                                       gsm_location=None,
+                                       data_dir=None,):
     """
     Creates a combined dataset for reasoning and in-context learning tasks.
 
@@ -797,10 +798,12 @@ def combined_reasoning_and_icl_dataset(tokenizer,
     Returns:
         CombinedDataset: A dataset that combines the four specified sources.
     """
+    if data_dir is None:
+        data_dir = "../data"
     if math_location is None:
-        math_location = "../data/MATH/train"
+        math_location = os.path.join(data_dir, "MATH", "train")
     if gsm_location is None:
-        gsm_location = "../data/grade-school-math/grade_school_math/data/train.jsonl"
+        gsm_location = os.path.join(data_dir, "grade-school-math", "grade_school_math", "data", "train.jsonl")
     math_sft_dataset = math_dataset(tokenizer, math_location, mode='train')
     gsm_8k_sft_dataset = gsm_8k_dataset(tokenizer, gsm_location, mode='train')
     pfa_sft_dataset = messages_pfa_dataset(tokenizer)

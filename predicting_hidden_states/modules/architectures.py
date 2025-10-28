@@ -756,7 +756,7 @@ class TransformerDecoderPHi(TransformerDecoder):
                     self.self_prediction_losses.add_loss(key.replace('_', ' '), value)
 
         # shape: [b, s, d]
-        last_hidden = self.norm(h)
+        # last_hidden = self.norm(h)
 
         if self.num_output_chunks > 0:
             output = self.chunked_output(h)

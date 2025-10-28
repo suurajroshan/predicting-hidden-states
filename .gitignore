@@ -2,6 +2,7 @@
 *_debug.*
 slurm/
 tmp/
+checkpoints/
 
 # Ignore caches
 *.pyc
