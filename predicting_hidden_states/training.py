@@ -284,6 +284,9 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
 
         info_bottleneck = cfg.get("model", {}).get("self_prediction_information_bottleneck", None)
         log.info(f'information bottleneck: {info_bottleneck}')
+        print('reconstruction loss factor: ', cfg.model.self_prediction_module.reconstruction_loss_factor)
+        print('phi loss factor: ', cfg.model.phi_loss_factor)
+        print('self critic loss factor: ', cfg.model.self_critic_loss_factor)
         if info_bottleneck == 'quantized':
             self.get_temperature = config.instantiate(cfg.temperature_scheduler)
             self.reconstruction_loss_factor = cfg.model.self_prediction_module.reconstruction_loss_factor
