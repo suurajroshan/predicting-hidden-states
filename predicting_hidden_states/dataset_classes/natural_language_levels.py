@@ -90,6 +90,8 @@ class TextCompletionDatasetWithMixIn(Dataset):
     def _prepare_sample(self, sample: Mapping[str, Any]) -> Dict[str, List[int]]:
         prompt = sample[self._column]
 
+        print(prompt)
+
         tokens = self._tokenizer.encode(text=prompt, add_bos=True, add_eos=self.add_eos)
 
         # Truncate if needed, but don't coerce EOS id

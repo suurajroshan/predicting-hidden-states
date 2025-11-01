@@ -203,6 +203,23 @@ class PHiLayer(torch.nn.Module):
             q_mean, q_logvar = distribution.chunk(2, dim=-1)
             q_logvar = torch.clamp(q_logvar, -5, 10)
 
+            # if not self.training:
+            entropy = q_logvar.size()[-1] / 2 * (1.0 + torch.log(torch.tensor(2 * torch.pi))) + 0.5 * q_logvar.sum(dim=-1)
+            return_dict["tokenwise_entropy"] = entropy.detach()
+            # TODO: remove for the forward pass
+            # if not self.training:
+            #     entropy = entropy.detach().cpu()
+            #     seq_lens = padding_mask.sum(-1).cpu()
+            #     # list of len batch_size, each element is a list of entropy values and chain of thought %
+            #     data = [[x[:y].tolist(),torch.linspace(0,1,y).tolist()] for (x,y) in zip(entropy, seq_lens)]
+            #     datay, datax = [i[0] for i in data], [i[1] for i in data]
+            #     wandb.log({"entropy": wandb.plot.line_series(
+            #         xs=datax,
+            #         ys=datay,
+            #         title="Entropy vs Chain of Thought",
+            #     )})
+   
+            
             if self.full_information_blockage:
                 # block all information in the latent space by having zero mean and log variance
                 q_mean = q_mean * 0.0
@@ -276,6 +293,7 @@ class PHiLayer(torch.nn.Module):
                 )
             else:
                 phi_losses = F.mse_loss(prediction_mean, target_mean, reduction="none")
+            
             phi_losses = phi_losses.mean(dim=-1) * target_padding_mask
             return_dict["tokenwise_phi_losses"] = phi_losses
             loss = phi_losses.sum() / target_padding_mask.sum()
@@ -368,9 +386,9 @@ class PHiLayer(torch.nn.Module):
             phi_losses_prior = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)
             
             phi_losses_prior = phi_losses_prior.sum(dim=-1) * target_padding_mask
-            return_dict['tokenwise_phi_losses_prior'] = phi_losses_prior 
+            return_dict['tokenwise_phi_losses'] = phi_losses_prior 
             loss = phi_losses_prior.sum() / target_padding_mask.sum()
-            return_dict['phi_loss_prior'] = loss * self.next_loss_factor
+            return_dict['phi_loss_prior'] = loss * self.next_loss_factor / 2 # dividing by 2 as we add losses from both posterior and prior
 
             # 2. detach prior ( train only the posterior )
             prediction_z_copy = prediction_z
@@ -381,9 +399,8 @@ class PHiLayer(torch.nn.Module):
             phi_losses_posterior = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)
 
             phi_losses_posterior = phi_losses_posterior.sum(dim=-1) * target_padding_mask
-            return_dict['tokenwise_phi_losses_posterior'] = phi_losses_posterior
             loss = phi_losses_posterior.sum() / target_padding_mask.sum()
-            return_dict['phi_loss_posterior'] = loss * self.next_loss_factor
+            return_dict['phi_loss_posterior'] = loss * self.next_loss_factor / 2 # dividing by 2 as we add losses from both posterior and prior
 
 
             # log temperature

@@ -14,7 +14,7 @@ def main():
 
     multiprocessing.set_start_method("spawn", force=True)
 
-    cfg = OmegaConf.load("configs/llama_3B_PHi.yaml")
+    cfg = OmegaConf.load("configs/llama_0.1B_PHi.yaml")
     # cfg = OmegaConf.load("configs/llama_3B_self_prediction.yaml")
 
     # override the cfg with cli parameters

@@ -748,6 +748,8 @@ class TransformerDecoderPHi(TransformerDecoder):
                 )
                 h = self_prediction_dict["h"]
 
+                entropy = self_prediction_dict.pop("entropy", None)
+
                 for key, value in self_prediction_dict.items():
                     if key == "h":
                         continue
@@ -766,7 +768,11 @@ class TransformerDecoderPHi(TransformerDecoder):
 
         # Output list if hidden states are requested, otherwise just the output
         output = output if not hidden else [*hidden, output]
-        return output
+        if entropy is not None:
+            output = (output, entropy)
+            return output
+        else:
+            return output
 
     def get_additional_losses(self) -> dict:
         """
@@ -784,6 +790,7 @@ class TransformerDecoderPHi(TransformerDecoder):
         """
         losses = self.self_prediction_losses.losses
         train_losses = {k: v for k, v in losses.items() if "tokenwise" not in k}
+        # print('training losses: ', train_losses)
         logging_losses = {
             k: (v * (v != 0.0)).sum() / (v != 0.0).sum()
             for k, v in losses.items()

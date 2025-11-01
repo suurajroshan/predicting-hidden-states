@@ -110,6 +110,21 @@ def generate_per_token_losses(recipe, batch):
         (labels[..., 1:], recipe.ignore_labels_cache[: labels.shape[0]])
     )
     logits = recipe._model(**batch)
+
+    if isinstance(logits, tuple):
+        logits, entropy = logits
+        entropy, seq_lens = entropy
+    if recipe.global_step % 10000 == 0:
+        entropy = entropy.detach().cpu()
+        # list of len batch_size, each element is a list of entropy values and chain of thought position
+        data = [[x[:y].tolist(),torch.linspace(0,1,y).tolist()] for (x,y) in zip(entropy, seq_lens)]
+        datay, datax = [i[0] for i in data], [i[1] for i in data]
+        recipe._metric_logger._wandb.log({f"entropy_{recipe.global_step}": recipe._metric_logger._wandb.plot.line_series(
+            xs=datax,
+            ys=datay,
+            title="Entropy vs Chain of Thought",
+        )})
+
     if type(logits) is list:
         logits = torch.cat(logits, dim=1)
     losses = torch.nn.functional.cross_entropy(
@@ -223,17 +238,16 @@ def process_data(
                 finished_processing_dataset = True
                 break
         model_batch = padded_collate_packed(current_batch_samples)
-
         # Calculate per-token losses
         per_token_losses = generate_per_token_losses(recipe,
                                                      model_batch)
-
         for key, value in per_token_losses.items():
             if 'next' in key:
                 per_token_losses[key] = torch.cat([torch.zeros_like(value[:, 0:1]), value], dim=1)
             if key == 'next_token_losses':
                 per_token_losses[key] = per_token_losses[key][:, :-1]
 
+        print(sample['seq_lens'])
 
         # split into datapoints
         current_datapoints = []
@@ -271,6 +285,27 @@ def process_data(
         datapoints = datapoints[:num_datapoints]
     return datapoints
 
+def compute_entopy_per_level(
+    datapoints,
+    level_key="learning_level",
+    levels=(0, 1, 2, 3, 4),
+    filter_out_space=False,
+):
+    entropy_vs_learning_levels = {level: [] for level in levels}
+    for d in datapoints:
+        d_level = d[level_key]
+        seq_lens = len(d["learning_level"])
+        for level in levels:
+            mask = d_level == level
+            if filter_out_space:
+                tokens = d["tokens"][1:-1]  # remove BOS and EOS tokens
+                space_mask = (
+                    tokens != 32
+                )  # remove spaces (32 is the ascii code for space)
+                mask = np.logical_and(mask, space_mask)
+            if mask.sum() > 0:
+                entropy_vs_learning_levels[level].append(d["entropy"][mask[:seq_lens]])
+    return entropy_vs_learning_levels 
 
 def compute_losses_per_level(
     datapoints,
@@ -680,6 +715,7 @@ def pfa_training_evaluation(recipe,
         dataset=dataset,
         num_datapoints=num_datapoints,
     )
+
     losses = ["next_token_losses"]
     interestingness_criterion = "next_token_losses"
     if "phi_losses" in datapoints[0]:
@@ -710,6 +746,12 @@ def pfa_training_evaluation(recipe,
     losses_vs_learning_levels_statistics = compute_losses_per_level_statistics(
         losses_vs_learning_levels,
         losses=losses,
+        levels=levels
+    )
+
+    entropy_vs_learning_levels = compute_entopy_per_level(
+        datapoints,
+        filter_out_space=False,
         levels=levels
     )
 

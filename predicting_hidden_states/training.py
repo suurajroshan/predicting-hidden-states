@@ -844,6 +844,9 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         labels = batch.pop("labels")
 
         logits = self._model(**batch)
+        entropy = None
+        if isinstance(logits, tuple):
+            logits, entropy = logits
 
         # Shift labels to compute loss
         # equivalent to doing labels[..., 1:] and logits[..., :-1, :]
@@ -866,7 +869,6 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
             next_token_prediction_loss = loss.clone()
             if self._ignore_main_training_loss:
                 loss = 0.0
-
             additional_training_losses, additional_logging_losses = self._model.get_additional_losses()
             for loss_name, loss_val in additional_training_losses.items():
                 loss += loss_val
@@ -948,7 +950,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                     except:
                         pass
                 loss, sub_losses_dict = self._loss_step(batch)
-
+   
                 sub_losses_dict = {k: v.item() for k, v in sub_losses_dict.items()}
 
                 # join the loss with the sub_losses_dict

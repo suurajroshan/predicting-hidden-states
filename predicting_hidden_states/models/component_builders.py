@@ -378,8 +378,6 @@ def llama3_phi(
             codebook_dim = self_prediction_module['codebook_dim']
             embed_dim = codeword_dim  # override embed dim if using quantization
             hidden_dim = codeword_dim * 8 // 3 # TODO: currrently a heuristic, can be parameterized later
-            print(f'number of embeddings: {codebook_dim}')
-            print(f'embedding dimension: {codeword_dim}')
             quantizer_mlp = quantizer_module(num_embeddings=codebook_dim, embedding_dim=codeword_dim)
             posterior_mlp = vae_encoder(codebook_dim=codebook_dim, tok_emb_dim=codeword_dim)
             decoder_mlp = vae_decoder(input_channels=codeword_dim, tok_emb_dim=embed_dim)
