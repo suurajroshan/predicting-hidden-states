@@ -844,9 +844,6 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         labels = batch.pop("labels")
 
         logits = self._model(**batch)
-        entropy = None
-        if isinstance(logits, tuple):
-            logits, entropy = logits
 
         # Shift labels to compute loss
         # equivalent to doing labels[..., 1:] and logits[..., :-1, :]

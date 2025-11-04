@@ -28,9 +28,10 @@ def main():
 
     if cli_debug_flag:
         print('Set to debug mode')
-        cfg.evaluate_every_n_steps = 10
-        cfg.evaluate_n_datapoints = 10
-        cfg.checkpoint_every_n_steps = 10
+        cfg.evaluate_every_n_steps = 5
+        cfg.evaluate_n_datapoints = 5
+        cfg.checkpoint_every_n_steps = 100000
+        cfg.log_every_n_steps = 1
 
     # cfg.evaluate_n_datapoints = 10
     cfg.dataset.packed_sequence_length = 2048

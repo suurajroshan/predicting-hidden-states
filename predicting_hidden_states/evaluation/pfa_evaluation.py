@@ -111,19 +111,18 @@ def generate_per_token_losses(recipe, batch):
     )
     logits = recipe._model(**batch)
 
-    if isinstance(logits, tuple):
-        logits, entropy = logits
-        entropy, seq_lens = entropy
-    if recipe.global_step % 10000 == 0:
-        entropy = entropy.detach().cpu()
-        # list of len batch_size, each element is a list of entropy values and chain of thought position
-        data = [[x[:y].tolist(),torch.linspace(0,1,y).tolist()] for (x,y) in zip(entropy, seq_lens)]
-        datay, datax = [i[0] for i in data], [i[1] for i in data]
-        recipe._metric_logger._wandb.log({f"entropy_{recipe.global_step}": recipe._metric_logger._wandb.plot.line_series(
-            xs=datax,
-            ys=datay,
-            title="Entropy vs Chain of Thought",
-        )})
+    # if isinstance(logits, tuple):
+    #     logits, entropy = logits
+    #     entropy, seq_lens = entropy
+    #     entropy = entropy.detach().cpu()
+    #     # list of len batch_size, each element is a list of entropy values and chain of thought position
+    #     data = [[x[:y].tolist(),torch.linspace(0,1,y).tolist()] for (x,y) in zip(entropy, seq_lens)]
+    #     datay, datax = [i[0] for i in data], [i[1] for i in data]
+    #     recipe._metric_logger._wandb.log({f"entropy_{recipe.global_step}": recipe._metric_logger._wandb.plot.line_series(
+    #         xs=datax,
+    #         ys=datay,
+    #         title="Entropy vs Chain of Thought",
+    #     )})
 
     if type(logits) is list:
         logits = torch.cat(logits, dim=1)
@@ -247,8 +246,6 @@ def process_data(
             if key == 'next_token_losses':
                 per_token_losses[key] = per_token_losses[key][:, :-1]
 
-        print(sample['seq_lens'])
-
         # split into datapoints
         current_datapoints = []
         for b in range(len(current_batch_samples)):
@@ -285,19 +282,22 @@ def process_data(
         datapoints = datapoints[:num_datapoints]
     return datapoints
 
-def compute_entopy_per_level(
+
+def compute_entropy_per_level(
     datapoints,
     level_key="learning_level",
     levels=(0, 1, 2, 3, 4),
-    filter_out_space=False,
+    filter_out_spaces=False,
 ):
-    entropy_vs_learning_levels = {level: [] for level in levels}
+    entropy_vs_learning_levels = {
+        level: [] for level in levels
+    }
     for d in datapoints:
         d_level = d[level_key]
         seq_lens = len(d["learning_level"])
         for level in levels:
             mask = d_level == level
-            if filter_out_space:
+            if filter_out_spaces:
                 tokens = d["tokens"][1:-1]  # remove BOS and EOS tokens
                 space_mask = (
                     tokens != 32
@@ -305,7 +305,13 @@ def compute_entopy_per_level(
                 mask = np.logical_and(mask, space_mask)
             if mask.sum() > 0:
                 entropy_vs_learning_levels[level].append(d["entropy"][mask[:seq_lens]])
-    return entropy_vs_learning_levels 
+
+    for level in levels:
+        e = np.concatenate(entropy_vs_learning_levels[level])
+        entropy_vs_learning_levels[level] = e
+
+    return entropy_vs_learning_levels
+
 
 def compute_losses_per_level(
     datapoints,
@@ -361,7 +367,7 @@ def compute_losses_per_level(
                 if mask.sum() > 0:
                     losses_len = len(d[loss])
                     losses_vs_learning_levels[loss][level].append(d[loss][mask[:losses_len]])
-
+    
     for loss in losses:
         for level in levels:
             c = np.concatenate(losses_vs_learning_levels[loss][level])
@@ -749,10 +755,22 @@ def pfa_training_evaluation(recipe,
         levels=levels
     )
 
-    entropy_vs_learning_levels = compute_entopy_per_level(
+    entropy_vs_memorized_levels = compute_entropy_per_level(
         datapoints,
-        filter_out_space=False,
-        levels=levels
+        filter_out_spaces=False,
+        levels=(0,1)
+    )
+
+    entropy_vs_learned_levels = compute_entropy_per_level(
+        datapoints,
+        filter_out_spaces=False,
+        levels=(2,3)
+    )
+
+    entropy_vs_random_levels = compute_entropy_per_level(
+        datapoints,
+        filter_out_spaces=False,
+        levels=(4, 5)
     )
 
     if ic_generalization_evaluation:
@@ -791,6 +809,44 @@ def pfa_training_evaluation(recipe,
     if length_generalization is not None:
         eval_values_dict["length_generalization"] = length_generalization
     recipe._model.self_prediction_losses.reset()
+
+    # plot entropy for different levels
+    # memorized levels
+    entropy_vs_memorized_levels_mean = [entropy_vs_memorized_levels[0].mean(), entropy_vs_memorized_levels[1].mean()]
+    fig = go.Figure(data=[go.Bar(x=levels[:2], y=entropy_vs_memorized_levels_mean)])
+    # add level names
+    fig.update_layout(
+        title="Entropy vs memorized",
+        xaxis_title="Learning level",
+        yaxis_title="",
+        xaxis=dict(tickvals=levels[:2], ticktext=[level_names[l] for l in levels[:2]]),
+    )
+    plotly_figure_dict["entropy_vs_memorized"] = fig
+
+    # learned levels
+    entropy_vs_learned_levels_mean = [entropy_vs_learned_levels[2].mean(), entropy_vs_learned_levels[3].mean()]
+    fig = go.Figure(data=[go.Bar(x=levels[2:4], y=entropy_vs_learned_levels_mean)])
+    # add level names
+    fig.update_layout(
+        title="Entropy vs learned",
+        xaxis_title="Learning level",
+        yaxis_title="",
+        xaxis=dict(tickvals=levels[2:4], ticktext=[level_names[l] for l in levels[2:4]]),
+    )
+    plotly_figure_dict["entropy_vs_learned"] = fig
+
+    # random levels
+    entropy_vs_random_levels_mean = [entropy_vs_random_levels[4].mean(), entropy_vs_random_levels[5].mean()]
+    fig = go.Figure(data=[go.Bar(x=levels[4:6], y=entropy_vs_random_levels_mean)])
+    # add level names
+    fig.update_layout(
+        title="Entropy vs random",
+        xaxis_title="Learning level",
+        yaxis_title="",
+        xaxis=dict(tickvals=levels[4:6], ticktext=[level_names[l] for l in levels[4:6]]),
+    )
+    plotly_figure_dict["entropy_vs_random"] = fig
+
     return plotly_figure_dict, eval_values_dict
 
 

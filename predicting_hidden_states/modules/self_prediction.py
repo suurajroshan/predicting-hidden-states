@@ -219,7 +219,6 @@ class PHiLayer(torch.nn.Module):
             #         title="Entropy vs Chain of Thought",
             #     )})
    
-            
             if self.full_information_blockage:
                 # block all information in the latent space by having zero mean and log variance
                 q_mean = q_mean * 0.0

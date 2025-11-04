@@ -53,7 +53,7 @@ dataset:
   packed_on_the_fly: true
   packed_sequence_length: 2048
   split_across_pack: false
-  included_learning_levels: [0, 1]
+  included_learning_levels: [0, 1, 2, 3, 4, 5]
 
   num_workers: 0
 shuffle: true # Whether to shuffle the dataset
