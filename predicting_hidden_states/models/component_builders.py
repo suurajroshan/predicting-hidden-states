@@ -24,11 +24,13 @@ from modules.architectures import (
     LSTMPHi,
 )
 from modules.self_prediction import (
+    RQ,
     PHiLayer,
     PHiMLP,
     vae_encoder,
     GumbelQuantize,
     vae_decoder,
+    ResidualVectorQuantizer
 )
 
 from torchtune.modules.common_utils import reparametrize_as_dtype_state_dict_post_hook
@@ -362,6 +364,7 @@ def llama3_phi(
     tok_embeddings = nn.Embedding(vocab_size, embed_dim)
     nn.init.uniform_(tok_embeddings.weight, a=-1e-4, b=1e-4)
     output_proj = nn.Linear(embed_dim, vocab_size, bias=False) if not tied_embeddings else TiedLinear(tok_embeddings)
+    sa_norm = RMSNorm(dim=embed_dim, eps=norm_eps)
 
     # Conditionally build the PHi self-prediction layer
     self_prediction_layer = None
@@ -376,13 +379,15 @@ def llama3_phi(
         if quantizer_module is not None:
             codeword_dim = self_prediction_module['codeword_dim']
             codebook_dim = self_prediction_module['codebook_dim']
+            num_quantizers = self_prediction_module["num_quantizers"]
             embed_dim = codeword_dim  # override embed dim if using quantization
             hidden_dim = codeword_dim * 8 // 3 # TODO: currrently a heuristic, can be parameterized later
             print(f'number of embeddings: {codebook_dim}')
             print(f'embedding dimension: {codeword_dim}')
-            quantizer_mlp = quantizer_module(num_embeddings=codebook_dim, embedding_dim=codeword_dim)
+            # quantizer_mlp = quantizer_module(num_embeddings=codebook_dim, embedding_dim=codeword_dim)
             posterior_mlp = vae_encoder(codebook_dim=codebook_dim, tok_emb_dim=codeword_dim)
             decoder_mlp = vae_decoder(input_channels=codeword_dim, tok_emb_dim=embed_dim)
+            quantizer_mlp = RQ(num_quantizers, codebook_dim, codeword_dim)
         else:
             posterior_mlp = nn.Linear(embed_dim, 2 * embed_dim, bias=False)
             quantizer_mlp = quantizer_module
@@ -391,6 +396,7 @@ def llama3_phi(
         # TODO: remove the dynamic assigning of embedding dim in prior attn, do it upstream
         if use_self_attention and phi_loss_factor > 0.0:
             # print('embed_dim: ',[embed_dim if quantizer_module is None else self_prediction_module.codeword_dim][0] )
+            # TODO: number of priors is equal to the number of quantizers
             prior_attention = MultiHeadAttention(
                 embed_dim=embed_dim,
                 num_heads=num_heads,
@@ -404,6 +410,9 @@ def llama3_phi(
                 max_seq_len=max_seq_len,
                 attn_dropout=attn_dropout,
             )
+            prior_attention = nn.ModuleList([prior_attention for _ in range(num_quantizers)])
+
+            sa_norm = nn.ModuleList([RMSNorm(dim=embed_dim, eps=norm_eps) for _ in range(num_quantizers)])
 
         self_prediction_layer = PHiLayer(
             d_model=embed_dim,
@@ -415,7 +424,7 @@ def llama3_phi(
                                                      output_dim=[codebook_dim if quantizer_module is not None else 2*embed_dim][0],
                                                      num_layers=self_prediction_num_layers),
             prior_prediction_attention=prior_attention,
-            sa_norm=RMSNorm(dim=embed_dim, eps=norm_eps) if prior_attention else None,
+            sa_norm=sa_norm if prior_attention else None,
             self_critic_loss_factor=self_critic_loss_factor,
             next_loss_factor=phi_loss_factor,
             detach_hidden_states=detach_hidden_states,

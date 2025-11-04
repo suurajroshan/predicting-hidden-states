@@ -14,7 +14,7 @@ def main():
 
     multiprocessing.set_start_method("spawn", force=True)
 
-    cfg = OmegaConf.load("configs/llama_3B_PHi.yaml")
+    cfg = OmegaConf.load("configs/llama_0.1B_PHi.yaml")
     # cfg = OmegaConf.load("configs/llama_3B_self_prediction.yaml")
 
     # override the cfg with cli parameters
@@ -28,9 +28,10 @@ def main():
 
     if cli_debug_flag:
         print('Set to debug mode')
-        cfg.evaluate_every_n_steps = 10
-        cfg.evaluate_n_datapoints = 10
-        cfg.checkpoint_every_n_steps = 10
+        cfg.evaluate_every_n_steps = 5
+        cfg.evaluate_n_datapoints = 5
+        cfg.checkpoint_every_n_steps = 100000
+        cfg.log_every_n_steps = 50
 
     # cfg.evaluate_n_datapoints = 10
     cfg.dataset.packed_sequence_length = 2048

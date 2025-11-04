@@ -21,8 +21,9 @@ model:
   # Configuration specific to the quantized PHi layer
   self_prediction_module:
     codeword_dim: 768
-    codebook_dim: 1024
-    reconstruction_loss_factor: 0.001
+    codebook_dim: 64
+    num_quantizers: 2
+    reconstruction_loss_factor: 0.00001
 
   # Loss weights for the PHi mechanism
   phi_loss_factor: 0.001
@@ -135,7 +136,7 @@ evaluate_every_n_steps: 1000
 
 # Logging configuration
 output_dir: /home/woody/iwbi/iwbi106h/suuraj/wandb_logs # Fallback output directory
-log_every_n_steps: 1000
+log_every_n_steps: 50
 log_peak_memory_stats: false
 
 metric_logger:
