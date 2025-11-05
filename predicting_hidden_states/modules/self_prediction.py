@@ -729,7 +729,7 @@ class RQ(nn.Module):
         # for i in range(self.num_quantizers):
 
     def _get_codes_and_indices(self, x, codebook_idx):
-        one_hot = F.gumbel_softmax(x, tau=1, dim=2, hard=True) # shape: (bsz, num_tokens, num_embeddings)
+        one_hot = F.gumbel_softmax(x, tau=self.temperature, dim=2, hard=True) # shape: (bsz, num_tokens, num_embeddings)
         z_q = einsum('b s n, n d -> b s d', one_hot, self.codebooks[codebook_idx].weight) # shape: (bsz, num_tokens, embedding_dim)
         ind = one_hot.argmax(dim=2)
         qy = F.softmax(x, dim=2)
