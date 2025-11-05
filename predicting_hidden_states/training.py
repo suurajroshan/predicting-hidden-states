@@ -92,7 +92,6 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
     def __init__(self, cfg: DictConfig) -> None:
         self._device = utils.get_device(device=cfg.device)
         self._dtype = training.get_dtype(cfg.dtype, device=self._device)
-
         if self._dtype == torch.float16:
             raise ValueError(
                 "full fp16 training is not supported with this recipe. Please use bf16 or fp32 instead."
