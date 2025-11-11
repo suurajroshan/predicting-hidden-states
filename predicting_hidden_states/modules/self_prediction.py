@@ -298,8 +298,8 @@ class PHiLayer(torch.nn.Module):
             # z = self.posterior_mlp(h)
             h_new, latent_losses, inds, zs = self.quantizer(h)
 
-            wandb.log({"num unique idxs": len(set(inds[0].flatten().tolist()))})
-            wandb.log({"num unique idxs": len(set(inds[1].flatten().tolist()))})
+            for i in range(self.quantizer.num_quantizers):
+                wandb.log({"num unique idxs": len(set(inds[i].flatten().tolist()))})
 
             if self.log_hist:
                 for i in range(self.quantizer.num_quantizers):
@@ -374,8 +374,8 @@ class PHiLayer(torch.nn.Module):
             # return_dict["tokenwise_phi_input_entropy"] = input_entropy
             
             phi_losses = phi_losses.sum(dim=-1) * target_padding_mask
-            return_dict['tokenwise_phi_losses1'] = phi_losses[0]
-            return_dict["tokenwise_phi_losses2"] = phi_losses[1]
+            for i in range(self.quantizer.num_quantizers):
+                return_dict[f'tokenwise_phi_losses{i}'] = phi_losses[i]
             loss = phi_losses.sum() / target_padding_mask.sum()
             return_dict['phi_loss'] = loss * self.next_loss_factor
             # Two losses: 1. trains only the prior 2. trains only the posterior
@@ -424,14 +424,16 @@ class PHiLayer(torch.nn.Module):
             if self.straight_through_eval and not self.training:
                 h_new = h
 
-            # encodings = F.one_hot(ind, self.quantizer.num_embeddings).float().reshape(-1, self.quantizer.num_embeddings)
-            # avg_probs = encodings.mean(0)
-            
-            # #compute the codebook perplexity
-            # perplexity = (-(avg_probs * torch.log(avg_probs + 1e-10)).sum()).exp() # exp(Entropy) = perplexity of a probabability distribution
-            # cluster_use = torch.sum(avg_probs > 0)
-            # return_dict["tokenwise_perplexity"] = perplexity
-            # return_dict["tokenwise_cluster_use"] = cluster_use
+            for i in range(self.quantizer.num_quantizers):
+                ind = inds[i]
+                encodings = F.one_hot(ind, self.quantizer.num_embeddings).float().reshape(-1, self.quantizer.num_embeddings)
+                avg_probs = encodings.mean(0)
+                
+                #compute the codebook perplexity
+                perplexity = (-(avg_probs * torch.log(avg_probs + 1e-10)).sum()).exp() # exp(Entropy) = perplexity of a probabability distribution
+                cluster_use = torch.sum(avg_probs > 0)
+                return_dict[f"tokenwise_perplexity{i}"] = perplexity
+                return_dict[f"tokenwise_cluster_use{i}"] = cluster_use
 
             return_dict["h"] = h_new
             return return_dict
@@ -615,97 +617,97 @@ class GumbelQuantize(nn.Module):
         return z_q, diff, ind
 
 
-class ResidualVectorQuantizer(nn.Module):
-    def __init__(self,
-                 posterior_mlp : nn.Module,
-                 decoder_mlp : nn.Module,
-                 num_embeddings_per_codebook: int = 1024,
-                 embedding_dim: int = 768,
-                 num_codebooks: int = 2,
-    ):
-        super().__init__()
+# class ResidualVectorQuantizer(nn.Module):
+#     def __init__(self,
+#                  posterior_mlp : nn.Module,
+#                  decoder_mlp : nn.Module,
+#                  num_embeddings_per_codebook: int = 1024,
+#                  embedding_dim: int = 768,
+#                  num_codebooks: int = 2,
+#     ):
+#         super().__init__()
 
-        self.num_codebooks = num_codebooks
-        self.num_embeddings = num_embeddings_per_codebook
-        self.embedding_dim = embedding_dim
+#         self.num_codebooks = num_codebooks
+#         self.num_embeddings = num_embeddings_per_codebook
+#         self.embedding_dim = embedding_dim
 
-        self.residual_stacks = nn.ModuleList([
-            nn.Sequential(
-                posterior_mlp, 
-                GumbelQuantize(num_embeddings=num_embeddings_per_codebook, embedding_dim=embedding_dim),
-                decoder_mlp,
-            ) for _ in range(self.num_codebooks)
-        ])
+#         self.residual_stacks = nn.ModuleList([
+#             nn.Sequential(
+#                 posterior_mlp, 
+#                 GumbelQuantize(num_embeddings=num_embeddings_per_codebook, embedding_dim=embedding_dim),
+#                 decoder_mlp,
+#             ) for _ in range(self.num_codebooks)
+#         ])
 
-    def forward(self, h):
-        latent_losses = []
-        zs = []
-        inds = []
-        residual_stream = h
-        h_sum = torch.zeros_like(h)
-        for m in self.residual_stacks:
-            z = m[:1](residual_stream)
-            z_q, latent_loss, ind = m[1:2](z)
-            h_prime = m[2:](z_q)
-            h_sum = h_sum + h_prime
-            residual_stream = residual_stream - h_prime
-            print('residual: ',torch.norm(residual_stream).item())
-            latent_losses.append(latent_loss)
-            inds.append(ind)
-            zs.append(z)
-        return h_sum, zs, latent_losses, inds
+#     def forward(self, h):
+#         latent_losses = []
+#         zs = []
+#         inds = []
+#         residual_stream = h
+#         h_sum = torch.zeros_like(h)
+#         for m in self.residual_stacks:
+#             z = m[:1](residual_stream)
+#             z_q, latent_loss, ind = m[1:2](z)
+#             h_prime = m[2:](z_q)
+#             h_sum = h_sum + h_prime
+#             residual_stream = residual_stream - h_prime
+#             print('residual: ',torch.norm(residual_stream).item())
+#             latent_losses.append(latent_loss)
+#             inds.append(ind)
+#             zs.append(z)
+#         return h_sum, zs, latent_losses, inds
 
-class ResidualQuantizer(nn.Module):
-    def __init__(self,
-                 num_embeddings_per_codebook: int = 1024,
-                 embedding_dim: int = 768,
-                 num_codebooks: int = 2,):
-        super().__init__()
+# class ResidualQuantizer(nn.Module):
+#     def __init__(self,
+#                  num_embeddings_per_codebook: int = 1024,
+#                  embedding_dim: int = 768,
+#                  num_codebooks: int = 2,):
+#         super().__init__()
         
-        for _ in range(num_codebooks):
-            self.layers = nn.ModuleList([
-                nn.Sequential(
-                    posterior(codebook_dim=num_embeddings_per_codebook, tok_emb_dim=embedding_dim),
-                    nn.Embedding(num_embeddings_per_codebook, embedding_dim),
-                    decoder(embedding_dim, embedding_dim),
-                )
-            ] for _ in range(num_codebooks))
-        print(self.layers)
+#         for _ in range(num_codebooks):
+#             self.layers = nn.ModuleList([
+#                 nn.Sequential(
+#                     posterior(codebook_dim=num_embeddings_per_codebook, tok_emb_dim=embedding_dim),
+#                     nn.Embedding(num_embeddings_per_codebook, embedding_dim),
+#                     decoder(embedding_dim, embedding_dim),
+#                 )
+#             ] for _ in range(num_codebooks))
+#         print(self.layers)
 
-    def forward(self, x):
-        residual = x
-        inds = []
-        for m in self.layers:
-            z = m[0](residual)
-            one_hot = F.gumbel_softmax(z, tau=1, dim=2, hard=True) # shape: (bsz, num_tokens, num_embeddings)
-            ind = one_hot.argmax(dim=2)
-            zq = einsum('b s n, n d -> b s d', one_hot, m[1].weight) # shape: (bsz, num_tokens, embedding_dim)
-            xhat = m[2](zq)
-            residual = x - xhat
-            inds.append(ind)
+#     def forward(self, x):
+#         residual = x
+#         inds = []
+#         for m in self.layers:
+#             z = m[0](residual)
+#             one_hot = F.gumbel_softmax(z, tau=1, dim=2, hard=True) # shape: (bsz, num_tokens, num_embeddings)
+#             ind = one_hot.argmax(dim=2)
+#             zq = einsum('b s n, n d -> b s d', one_hot, m[1].weight) # shape: (bsz, num_tokens, embedding_dim)
+#             xhat = m[2](zq)
+#             residual = x - xhat
+#             inds.append(ind)
 
-    def get_code(self, ind):
-        for i, m in enumerate(self.layers):
-            codes = m[1](ind[i])
-            print(codes.size())
+#     def get_code(self, ind):
+#         for i, m in enumerate(self.layers):
+#             codes = m[1](ind[i])
+#             print(codes.size())
 
 
 
-class posterior(nn.Module):
-    def __init__(self, codebook_dim : int = 1024, tok_emb_dim: int = 768):
-        super().__init__()
-        self.net = nn.Linear(tok_emb_dim, codebook_dim, bias=False)
+# class posterior(nn.Module):
+#     def __init__(self, codebook_dim : int = 1024, tok_emb_dim: int = 768):
+#         super().__init__()
+#         self.net = nn.Linear(tok_emb_dim, codebook_dim, bias=False)
 
-    def forward(self, x):
-        return self.net(x)
+#     def forward(self, x):
+#         return self.net(x)
 
-class decoder(nn.Module):
-    def __init__(self, input_channels: int, tok_emb_dim : int):
-        super().__init__()
-        self.net = nn.Linear(input_channels, tok_emb_dim, bias=False)
+# class decoder(nn.Module):
+#     def __init__(self, input_channels: int, tok_emb_dim : int):
+#         super().__init__()
+#         self.net = nn.Linear(input_channels, tok_emb_dim, bias=False)
 
-    def forward(self, x):
-        return self.net(x)
+#     def forward(self, x):
+#         return self.net(x)
 
 # helper function
 def default(a, b):
@@ -725,7 +727,7 @@ class RQ(nn.Module):
         self.posteriors = default(posterior_mlp, self._get_posteriors())
         # self.posterior = nn.Linear(self.dim, self.num_embeddings)
         # self.decoders = self._get_decoders()
-        self.decoder = default(decoder_mlp, nn.Linear(self.dim, self.dim))
+        self.decoder = default(decoder_mlp, self._get_decoder())
         # for i in range(self.num_quantizers):
 
     def _get_codes_and_indices(self, x, codebook_idx):
@@ -744,8 +746,21 @@ class RQ(nn.Module):
     #         decoder.append(nn.Linear(self.dim, self.dim))
     #     return decoder
     
+    def _get_decoder(self):
+        shared_decoder = nn.Sequential(
+            decoder(self.dim, 1024),
+            decoder(1024, self.dim),)
+        return shared_decoder
+    #     for _ in range(1, self.num_quantizers):
+    #         decoder.append(nn.Linear(self.dim, self.dim))
+    #     return decoder
+        
+
     def _get_posteriors(self):
-        posterior = nn.ModuleList([nn.Linear(self.dim, self.num_embeddings)])
+        posterior = nn.ModuleList([
+            nn.Sequential(encoder(self.dim, 2048), 
+                          encoder(2048, self.num_embeddings),)
+            ])
         for _ in range(1, self.num_quantizers):
             posterior.append(nn.Linear(self.dim, self.num_embeddings))
         return posterior
@@ -767,7 +782,7 @@ class RQ(nn.Module):
 
         # TODO: modify posterior to handle both single module and module list 
         for i in range(self.num_quantizers):
-            z = self.posteriors[i](residual)
+            z = self.posteriors[i](residual)  # shape: (bsz, seq_len, num_embeddings)
             z_q, latent_loss, ind = self._get_codes_and_indices(z, i)
 
             self.cache_zqs(z_q)
@@ -795,3 +810,30 @@ class RQ(nn.Module):
 
     def clear_cache_zqs(self):
         self._zqs = [[] for _ in range(self.num_quantizers)][0]
+
+
+class encoder(nn.Module):
+    def __init__(self, dim: int = 768, num_embeddings : int = 1024):
+        super().__init__()
+        self.linear= nn.Linear(dim, num_embeddings)
+        self.batch_norm = nn.BatchNorm1d(num_embeddings)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        x = self.linear(x)
+        x = self.batch_norm(x.transpose(1,2)).transpose(1,2)
+        x = self.relu(x)
+        return x
+
+class decoder(nn.Module):
+    def __init__(self, in_dim : int = 768, out_dim : int = 768):
+        super().__init__()
+        self.linear = nn.Linear(in_dim, out_dim)
+        self.batch_norm = nn.BatchNorm1d(out_dim)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        x = self.linear(x)
+        x = self.batch_norm(x.transpose(1,2)).transpose(1,2)
+        x = self.relu(x)
+        return x

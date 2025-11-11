@@ -682,10 +682,13 @@ def pfa_training_evaluation(recipe,
     )
     losses = ["next_token_losses"]
     interestingness_criterion = "next_token_losses"
-    losses.append("latent_loss1")
-    losses.append("latent_loss0")
-    losses.append("phi_losses1")
-    losses.append("phi_losses2")
+    for i in range(recipe._model.self_prediction_layer.quantizer.num_quantizers):
+        losses.append(f"latent_loss{i}")
+        losses.append(f"phi_losses{i}")
+    # losses.append("latent_loss1")
+    # losses.append("latent_loss0")
+    # losses.append("phi_losses1")
+    # losses.append("phi_losses2")
     if "phi_losses" in datapoints[0]:
         losses.append("phi_losses")
         interestingness_criterion = "phi_losses"

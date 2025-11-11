@@ -16,13 +16,13 @@ model:
   # These parameters configure the PHi layer integrated into the model
   use_self_prediction: true # Master switch to enable the PHi layer and its losses
   self_prediction_layer: 10 # Layer index *after which* the PHi layer is inserted
-  self_prediction_information_bottleneck: continuous # either `continuous` / `quantized`
+  self_prediction_information_bottleneck: quantized # either `continuous` / `quantized`
   
   # Configuration specific to the quantized PHi layer
   self_prediction_module:
     codeword_dim: 768
-    codebook_dim: 64
-    num_quantizers: 2
+    codebook_dim: 1024
+    num_quantizers: 1
     reconstruction_loss_factor: 0.00001
 
   # Loss weights for the PHi mechanism

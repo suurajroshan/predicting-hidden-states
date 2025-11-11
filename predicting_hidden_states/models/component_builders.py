@@ -30,7 +30,6 @@ from modules.self_prediction import (
     vae_encoder,
     GumbelQuantize,
     vae_decoder,
-    ResidualVectorQuantizer
 )
 
 from torchtune.modules.common_utils import reparametrize_as_dtype_state_dict_post_hook
@@ -410,6 +409,7 @@ def llama3_phi(
                 max_seq_len=max_seq_len,
                 attn_dropout=attn_dropout,
             )
+            print(num_quantizers)
             prior_attention = nn.ModuleList([prior_attention for _ in range(num_quantizers)])
 
             sa_norm = nn.ModuleList([RMSNorm(dim=embed_dim, eps=norm_eps) for _ in range(num_quantizers)])
