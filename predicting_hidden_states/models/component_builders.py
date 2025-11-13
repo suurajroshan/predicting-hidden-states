@@ -375,7 +375,7 @@ def llama3_phi(
             'continuous': None,
         }[self_prediction_information_bottleneck]
 
-        if quantizer_module is not None:
+        if self_prediction_information_bottleneck == 'quantized':
             codeword_dim = self_prediction_module['codeword_dim']
             codebook_dim = self_prediction_module['codebook_dim']
             num_quantizers = self_prediction_module["num_quantizers"]
@@ -409,10 +409,10 @@ def llama3_phi(
                 max_seq_len=max_seq_len,
                 attn_dropout=attn_dropout,
             )
-            print(num_quantizers)
-            prior_attention = nn.ModuleList([prior_attention for _ in range(num_quantizers)])
+            if self_prediction_information_bottleneck == 'quantized':
+                prior_attention = nn.ModuleList([prior_attention for _ in range(num_quantizers)])
 
-            sa_norm = nn.ModuleList([RMSNorm(dim=embed_dim, eps=norm_eps) for _ in range(num_quantizers)])
+                sa_norm = nn.ModuleList([RMSNorm(dim=embed_dim, eps=norm_eps) for _ in range(num_quantizers)])
 
         self_prediction_layer = PHiLayer(
             d_model=embed_dim,

@@ -118,6 +118,8 @@ def generate_per_token_losses(recipe, batch):
         reduction="none",
         ignore_index=recipe._loss_fn.ignore_index,
     ).view_as(labels)
+    print('logits size: ',logits.size())
+    print(losses.mean().detach().item())
     decoded_tokens = decode_token_by_token(batch["tokens"], tokenizer=recipe._tokenizer)
     per_token_losses = {
         "tokens": batch["tokens"],

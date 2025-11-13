@@ -285,11 +285,11 @@ class PHiLayer(torch.nn.Module):
 
             if self.decoder_mlp is not None:
                 h_new = self.decoder_mlp(z)
-            else:
-                h_new = z
+            # else:
+            #     h_new = z
 
-            if self.straight_through_eval and not self.training:
-                h_new = h
+            # if self.straight_through_eval and not self.training:
+            #     h_new = h
 
             return_dict["h"] = h_new
             return return_dict
@@ -308,28 +308,29 @@ class PHiLayer(torch.nn.Module):
 
             # Loss term -> KL divergence of the uniform prior / do not train but good to observe
             #TODO: rewrite to handle multiple quantizers
-            padding_mask = repeat(padding_mask, 'b s -> q b s', q=latent_losses.size(0)) if latent_losses.dim() == 4 else padding_mask
+            latent_padding_mask = repeat(padding_mask, 'b s -> q b s', q=latent_losses.size(0)) if latent_losses.dim() == 4 else padding_mask
             latent_losses = latent_losses.sum(-1)
-            latent_loss = latent_losses * padding_mask
+            latent_loss = latent_losses * latent_padding_mask
             for i in range(self.quantizer.num_quantizers):
                 return_dict[f"tokenwise_latent_loss{i}"] = latent_loss[i]
 
             ### Self Critic Losses ###
             # TODO: rewrite to handle multiple quantizers
 
-            ind_one_hot = F.one_hot(inds, num_classes=zs.size(-1))  # (batch, seq_len, num_codes)
-            self_critic_scores = torch.einsum('q i s c, q j s c -> q i j s', zs, ind_one_hot.to(zs.dtype))  # (batch_z, batch_ind_one_hot, seq_len)
-            self_critic_scores = self_critic_scores.transpose(2, 3)  # (batch_z, seq_len, batch_ind_one_hot)
-            self_critic_targets = torch.arange(self_critic_scores.shape[3])[:, None].repeat(self_critic_scores.shape[0], 1, self_critic_scores.shape[2])  # (batch, seq_len)
-            self_critic_losses = F.cross_entropy(
-                self_critic_scores.reshape(-1, self_critic_scores.shape[-1]).float(),
-                self_critic_targets.flatten().to(zs.device),
-                reduction="none",
-            )
-            self_critic_losses = (self_critic_losses * padding_mask.flatten()).view_as(padding_mask)
-            return_dict["tokenwise_self_critic_loss"] = self_critic_losses
-            self_critic_loss = self_critic_losses.sum() / padding_mask.sum()
-            return_dict["self_critic_loss"] = self_critic_loss * self.self_critic_loss_factor
+            for i in range(self.quantizer.num_quantizers):
+                ind_one_hot = F.one_hot(inds[i], num_classes=zs[i].size(-1))  # (batch, seq_len, num_codes)
+                self_critic_scores = torch.einsum('i s c, j s c -> i j s', zs[i], ind_one_hot.to(zs[i].dtype))  # (batch_z, batch_ind_one_hot, seq_len)
+                self_critic_scores = self_critic_scores.transpose(1, 2)  # (batch_z, seq_len, batch_ind_one_hot)
+                self_critic_targets = torch.arange(self_critic_scores.shape[2])[:, None].repeat(1, self_critic_scores.shape[1])  # (batch, seq_len)
+                self_critic_losses = F.cross_entropy(
+                    self_critic_scores.reshape(-1, self_critic_scores.shape[-1]).float(),
+                    self_critic_targets.flatten().to(zs.device),
+                    reduction="none",
+                )
+                self_critic_losses = (self_critic_losses * padding_mask.flatten()).view_as(padding_mask)
+                return_dict[f"tokenwise_self_critic_loss{i}"] = self_critic_losses.reshape(-1, padding_mask.shape[1])
+                self_critic_loss = self_critic_losses.sum() / padding_mask.sum()
+                return_dict[f"self_critic_loss{i}"] = self_critic_loss * self.self_critic_loss_factor
 
             ### Self Prediction ################################################################
             # compute autoregressive prior based on the previous latent variables
@@ -410,7 +411,7 @@ class PHiLayer(torch.nn.Module):
 
 
             # log temperature
-            # return_dict["tokenwise_temperature"] = torch.ones(1)*self.quantizer.temperature
+            return_dict["tokenwise_temperature"] = torch.ones(1)*self.quantizer.temperature
 
             # if self.decoder_mlp is not None:
             #     h_new = self.decoder_mlp(z_q)
@@ -748,8 +749,8 @@ class RQ(nn.Module):
     
     def _get_decoder(self):
         shared_decoder = nn.Sequential(
-            decoder(self.dim, 1024),
-            decoder(1024, self.dim),)
+            decoder(self.dim, 2048),
+            decoder(2048, self.dim),)
         return shared_decoder
     #     for _ in range(1, self.num_quantizers):
     #         decoder.append(nn.Linear(self.dim, self.dim))
