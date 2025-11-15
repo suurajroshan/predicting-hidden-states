@@ -22,7 +22,6 @@ def main():
     cli_debug_flag = cli_cfg.pop("debug", False)
     cfg = OmegaConf.merge(cfg, cli_cfg)
 
-    cfg.evaluate_every_n_steps = 1000
     cfg.checkpoint_every_n_steps = 1000
 
 

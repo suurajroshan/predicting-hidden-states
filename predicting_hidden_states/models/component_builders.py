@@ -331,8 +331,6 @@ def llama3_phi(
     rope = Llama3ScaledRoPE(dim=head_dim, max_seq_len=max_seq_len, base=rope_base, scale_factor=scale_factor)
     hidden_dim = intermediate_dim if intermediate_dim else scale_hidden_dim_for_mlp(embed_dim)
 
-    print(self_prediction_module)
-
     # Build the stack of Transformer layers
     layers = []
     for _ in range(num_layers):
@@ -373,7 +371,10 @@ def llama3_phi(
             'continuous': None,
         }[self_prediction_information_bottleneck]
 
+        print(self_prediction_information_bottleneck)
+
         if quantizer_module is not None:
+            print(self_prediction_module)
             codeword_dim = self_prediction_module['codeword_dim']
             codebook_dim = self_prediction_module['codebook_dim']
             embed_dim = codeword_dim  # override embed dim if using quantization

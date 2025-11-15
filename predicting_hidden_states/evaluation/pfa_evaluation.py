@@ -12,6 +12,7 @@ import matplotlib.colors as mcolors
 # import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import torch
 from scipy.special import comb
 
@@ -110,19 +111,6 @@ def generate_per_token_losses(recipe, batch):
         (labels[..., 1:], recipe.ignore_labels_cache[: labels.shape[0]])
     )
     logits = recipe._model(**batch)
-
-    # if isinstance(logits, tuple):
-    #     logits, entropy = logits
-    #     entropy, seq_lens = entropy
-    #     entropy = entropy.detach().cpu()
-    #     # list of len batch_size, each element is a list of entropy values and chain of thought position
-    #     data = [[x[:y].tolist(),torch.linspace(0,1,y).tolist()] for (x,y) in zip(entropy, seq_lens)]
-    #     datay, datax = [i[0] for i in data], [i[1] for i in data]
-    #     recipe._metric_logger._wandb.log({f"entropy_{recipe.global_step}": recipe._metric_logger._wandb.plot.line_series(
-    #         xs=datax,
-    #         ys=datay,
-    #         title="Entropy vs Chain of Thought",
-    #     )})
 
     if type(logits) is list:
         logits = torch.cat(logits, dim=1)
@@ -311,6 +299,35 @@ def compute_entropy_per_level(
         entropy_vs_learning_levels[level] = e
 
     return entropy_vs_learning_levels
+
+def compute_variance_per_level(
+    datapoints,
+    level_key="learning_level",
+    levels=(0, 1, 2, 3, 4),
+    filter_out_spaces=False,
+):
+    variance_vs_learning_levels = {
+        level: [] for level in levels
+    }
+    for d in datapoints:
+        d_level = d[level_key]
+        seq_lens = len(d["learning_level"])
+        for level in levels:
+            mask = d_level == level
+            if filter_out_spaces:
+                tokens = d["tokens"][1:-1]  # remove BOS and EOS tokens
+                space_mask = (
+                    tokens != 32
+                )  # remove spaces (32 is the ascii code for space)
+                mask = np.logical_and(mask, space_mask)
+            if mask.sum() > 0:
+                variance_vs_learning_levels[level].append(d["variance"][mask[:seq_lens]])
+
+    for level in levels:
+        e = np.concatenate(variance_vs_learning_levels[level])
+        variance_vs_learning_levels[level] = e
+
+    return variance_vs_learning_levels
 
 
 def compute_losses_per_level(
@@ -755,23 +772,15 @@ def pfa_training_evaluation(recipe,
         levels=levels
     )
 
-    entropy_vs_memorized_levels = compute_entropy_per_level(
-        datapoints,
-        filter_out_spaces=False,
-        levels=(0,1)
-    )
-
-    entropy_vs_learned_levels = compute_entropy_per_level(
-        datapoints,
-        filter_out_spaces=False,
-        levels=(2,3)
-    )
-
-    entropy_vs_random_levels = compute_entropy_per_level(
-        datapoints,
-        filter_out_spaces=False,
-        levels=(4, 5)
-    )
+    entropy_vs_memorized_levels, entropy_vs_learned_levels, entropy_vs_random_levels = [compute_entropy_per_level(datapoints, filter_out_spaces=False,levels=(0,1)), 
+        compute_entropy_per_level(datapoints,filter_out_spaces=False,levels=(2,3)),
+        compute_entropy_per_level(datapoints,filter_out_spaces=False,levels=(4, 5))
+    ]
+    
+    variance_vs_memorized_levels, variance_vs_learned_levels, variance_vs_random_levels = [compute_variance_per_level(datapoints, filter_out_spaces=False,levels=(0,1)), 
+        compute_variance_per_level(datapoints,filter_out_spaces=False,levels=(2,3)),
+        compute_variance_per_level(datapoints,filter_out_spaces=False,levels=(4, 5))
+    ]
 
     if ic_generalization_evaluation:
         length_generalization_results = evaluate_language_generation_length(recipe, num_samples=500)
@@ -811,41 +820,57 @@ def pfa_training_evaluation(recipe,
     recipe._model.self_prediction_losses.reset()
 
     # plot entropy for different levels
-    # memorized levels
     entropy_vs_memorized_levels_mean = [entropy_vs_memorized_levels[0].mean(), entropy_vs_memorized_levels[1].mean()]
-    fig = go.Figure(data=[go.Bar(x=levels[:2], y=entropy_vs_memorized_levels_mean)])
-    # add level names
-    fig.update_layout(
-        title="Entropy vs memorized",
-        xaxis_title="Learning level",
-        yaxis_title="",
-        xaxis=dict(tickvals=levels[:2], ticktext=[level_names[l] for l in levels[:2]]),
+    entropy_subplots_fig = make_subplots(rows=1, cols=3, subplot_titles=("Entropy vs memorized", "Entropy vs learned", "Entropy vs random"))
+    entropy_subplots_fig.add_trace(
+        go.Bar(x=levels[:2], y=entropy_vs_memorized_levels_mean),
+        row=1, col=1
     )
-    plotly_figure_dict["entropy_vs_memorized"] = fig
-
-    # learned levels
     entropy_vs_learned_levels_mean = [entropy_vs_learned_levels[2].mean(), entropy_vs_learned_levels[3].mean()]
-    fig = go.Figure(data=[go.Bar(x=levels[2:4], y=entropy_vs_learned_levels_mean)])
-    # add level names
-    fig.update_layout(
-        title="Entropy vs learned",
-        xaxis_title="Learning level",
-        yaxis_title="",
-        xaxis=dict(tickvals=levels[2:4], ticktext=[level_names[l] for l in levels[2:4]]),
+    entropy_subplots_fig.add_trace(
+        go.Bar(x=levels[2:4], y=entropy_vs_learned_levels_mean),
+        row=1, col=2
     )
-    plotly_figure_dict["entropy_vs_learned"] = fig
-
-    # random levels
     entropy_vs_random_levels_mean = [entropy_vs_random_levels[4].mean(), entropy_vs_random_levels[5].mean()]
-    fig = go.Figure(data=[go.Bar(x=levels[4:6], y=entropy_vs_random_levels_mean)])
-    # add level names
-    fig.update_layout(
-        title="Entropy vs random",
-        xaxis_title="Learning level",
-        yaxis_title="",
-        xaxis=dict(tickvals=levels[4:6], ticktext=[level_names[l] for l in levels[4:6]]),
+    entropy_subplots_fig.add_trace(
+        go.Bar(x=levels[4:6], y=entropy_vs_random_levels_mean),
+        row=1, col=3
     )
-    plotly_figure_dict["entropy_vs_random"] = fig
+    entropy_subplots_fig.update_xaxes(title_text="Learning level", row=1, col=1)
+    entropy_subplots_fig.update_xaxes(title_text="Learning level", row=1, col=2)
+    entropy_subplots_fig.update_xaxes(title_text="Learning level", row=1, col=3)
+    entropy_subplots_fig.update_xaxes(tickvals=levels[:2], ticktext=[level_names[l] for l in levels[:2]], row=1, col=1)
+    entropy_subplots_fig.update_xaxes(tickvals=levels[2:4], ticktext=[level_names[l] for l in levels[2:4]], row=1, col=2)
+    entropy_subplots_fig.update_xaxes(tickvals=levels[4:6], ticktext=[level_names[l] for l in levels[4:6]], row=1, col=3)
+    entropy_subplots_fig.update_layout(showlegend=False)
+    plotly_figure_dict["entropy_plots"] = entropy_subplots_fig
+
+
+    # plot variance for different levels
+    variance_vs_memorized_levels_mean = [variance_vs_memorized_levels[0].mean(), variance_vs_memorized_levels[1].mean()]
+    variance_subplots_fig = make_subplots(rows=1, cols=3, subplot_titles=("variance vs memorized", "variance vs learned", "variance vs random"))
+    variance_subplots_fig.add_trace(
+        go.Bar(x=levels[:2], y=variance_vs_memorized_levels_mean),
+        row=1, col=1
+    )
+    variance_vs_learned_levels_mean = [variance_vs_learned_levels[2].mean(), variance_vs_learned_levels[3].mean()]
+    variance_subplots_fig.add_trace(
+        go.Bar(x=levels[2:4], y=variance_vs_learned_levels_mean),
+        row=1, col=2
+    )
+    variance_vs_random_levels_mean = [variance_vs_random_levels[4].mean(), variance_vs_random_levels[5].mean()]
+    variance_subplots_fig.add_trace(
+        go.Bar(x=levels[4:6], y=variance_vs_random_levels_mean),
+        row=1, col=3
+    )
+    variance_subplots_fig.update_xaxes(title_text="Learning level", row=1, col=1)
+    variance_subplots_fig.update_xaxes(title_text="Learning level", row=1, col=2)
+    variance_subplots_fig.update_xaxes(title_text="Learning level", row=1, col=3)
+    variance_subplots_fig.update_xaxes(tickvals=levels[:2], ticktext=[level_names[l] for l in levels[:2]], row=1, col=1)
+    variance_subplots_fig.update_xaxes(tickvals=levels[2:4], ticktext=[level_names[l] for l in levels[2:4]], row=1, col=2)
+    variance_subplots_fig.update_xaxes(tickvals=levels[4:6], ticktext=[level_names[l] for l in levels[4:6]], row=1, col=3)
+    variance_subplots_fig.update_layout(showlegend=False)
+    plotly_figure_dict["variance_plots"] = variance_subplots_fig
 
     return plotly_figure_dict, eval_values_dict
 

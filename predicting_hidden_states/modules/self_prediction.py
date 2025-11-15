@@ -16,7 +16,7 @@ from torch import einsum
 from scipy.cluster.vq import kmeans2
 import wandb
 
-
+# !! check the formula
 def gaussian_kl(mu_q, log_var_q, mu_p, log_var_p):
     """
     Calculates the KL divergence between two diagonal Gaussian distributions.
@@ -39,6 +39,8 @@ def gaussian_kl(mu_q, log_var_q, mu_p, log_var_p):
         - 1
     )
     return kl
+
+# def gaussian_kl_q_uniform(mu_q, log_var_q):
 
 
 class PHiMLP(nn.Module):
@@ -204,20 +206,14 @@ class PHiLayer(torch.nn.Module):
             q_logvar = torch.clamp(q_logvar, -5, 10)
 
             # if not self.training:
-            entropy = q_logvar.size()[-1] / 2 * (1.0 + torch.log(torch.tensor(2 * torch.pi))) + 0.5 * q_logvar.sum(dim=-1)
-            return_dict["tokenwise_entropy"] = entropy.detach()
-            # TODO: remove for the forward pass
-            # if not self.training:
-            #     entropy = entropy.detach().cpu()
-            #     seq_lens = padding_mask.sum(-1).cpu()
-            #     # list of len batch_size, each element is a list of entropy values and chain of thought %
-            #     data = [[x[:y].tolist(),torch.linspace(0,1,y).tolist()] for (x,y) in zip(entropy, seq_lens)]
-            #     datay, datax = [i[0] for i in data], [i[1] for i in data]
-            #     wandb.log({"entropy": wandb.plot.line_series(
-            #         xs=datax,
-            #         ys=datay,
-            #         title="Entropy vs Chain of Thought",
-            #     )})
+            # entropy = 0.5 * q_logvar.size()[-1] * (1.0 + torch.log(torch.tensor(2 * torch.pi))) + 0.5 * q_logvar.sum(dim=-1)
+            # return_dict["tokenwise_entropy"] = entropy.detach()
+
+            # # compute variance 
+            # variance = torch.exp(q_logvar).sum(-1)
+            # return_dict["tokenwise_variance"] = variance.detach()
+
+
    
             if self.full_information_blockage:
                 # block all information in the latent space by having zero mean and log variance
@@ -254,49 +250,49 @@ class PHiLayer(torch.nn.Module):
 
             # --- Self Prediction ---
             # 4. Compute autoregressive prior p(z_t | z_{<t})
-            prediction_input = z
-            if self.prior_prediction_attention is not None:
-                prediction_input = self.prior_prediction_attention(prediction_input, prediction_input,
-                                                                mask=mask, input_pos=input_pos)
-            # Shift input for next-step prediction
-            prediction_input = prediction_input[:, :-1]  # (batch_size, seq_len - 1, d_model)
-            prediction_input = torch.cat((self.initial_embedding.expand(prediction_input.shape[0], -1, -1),
-                                        prediction_input), dim=1)  # (batch_size, seq_len, d_model)
-            prediction_mean = self.prior_prediction_mlp(self.sa_norm(prediction_input))
+            # prediction_input = z
+            # if self.prior_prediction_attention is not None:
+            #     prediction_input = self.prior_prediction_attention(prediction_input, prediction_input,
+            #                                                     mask=mask, input_pos=input_pos)
+            # # Shift input for next-step prediction
+            # prediction_input = prediction_input[:, :-1]  # (batch_size, seq_len - 1, d_model)
+            # prediction_input = torch.cat((self.initial_embedding.expand(prediction_input.shape[0], -1, -1),
+            #                             prediction_input), dim=1)  # (batch_size, seq_len, d_model)
+            # prediction_mean = self.prior_prediction_mlp(self.sa_norm(prediction_input))
 
-            if prediction_mean.shape[-1] == 2 * h.shape[-1]:
-                # Split the prediction mean and log variance
-                prediction_mean, prediction_logvar = prediction_mean.chunk(2, dim=-1)
-                prediction_logvar = torch.clamp(prediction_logvar, -5, 10)
+            # if prediction_mean.shape[-1] == 2 * h.shape[-1]:
+            #     # Split the prediction mean and log variance
+            #     prediction_mean, prediction_logvar = prediction_mean.chunk(2, dim=-1)
+            #     prediction_logvar = torch.clamp(prediction_logvar, -5, 10)
 
-            if not self.use_hidden_state_prediction:
-                # Use unit gaussian as a prior if hidden state prediction is not used
-                prediction_mean = torch.zeros_like(prediction_mean)
-                prediction_logvar = torch.zeros_like(prediction_logvar)
+            # if not self.use_hidden_state_prediction:
+            #     # Use unit gaussian as a prior if hidden state prediction is not used
+            #     prediction_mean = torch.zeros_like(prediction_mean)
+            #     prediction_logvar = torch.zeros_like(prediction_logvar)
 
-            # 5. Calculate PHi Loss (KL divergence between prior and posterior)
-            target_mean = q_mean
-            target_logvar = q_logvar
-            if self.detach_targets:
-                target_mean = target_mean.detach()
-                target_logvar = target_logvar.detach()
+            # # 5. Calculate PHi Loss (KL divergence between prior and posterior)
+            # target_mean = q_mean
+            # target_logvar = q_logvar
+            # if self.detach_targets:
+            #     target_mean = target_mean.detach()
+            #     target_logvar = target_logvar.detach()
 
-            target_padding_mask = padding_mask
+            # target_padding_mask = padding_mask
 
-            if self.use_information_bottleneck:
-                phi_losses = gaussian_kl(
-                    mu_q=prediction_mean,
-                    log_var_q=prediction_logvar,
-                    mu_p=target_mean,
-                    log_var_p=target_logvar,
-                )
-            else:
-                phi_losses = F.mse_loss(prediction_mean, target_mean, reduction="none")
+            # if self.use_information_bottleneck:
+            #     phi_losses = gaussian_kl(
+            #         mu_q=prediction_mean,
+            #         log_var_q=prediction_logvar,
+            #         mu_p=target_mean,
+            #         log_var_p=target_logvar,
+            #     )
+            # else:
+            #     phi_losses = F.mse_loss(prediction_mean, target_mean, reduction="none")
             
-            phi_losses = phi_losses.mean(dim=-1) * target_padding_mask
-            return_dict["tokenwise_phi_losses"] = phi_losses
-            loss = phi_losses.sum() / target_padding_mask.sum()
-            return_dict["phi_loss"] = loss * self.next_loss_factor
+            # phi_losses = phi_losses.mean(dim=-1) * target_padding_mask
+            # return_dict["tokenwise_phi_losses"] = phi_losses
+            # loss = phi_losses.sum() / target_padding_mask.sum()
+            # return_dict["phi_loss"] = loss * self.next_loss_factor
 
             if self.decoder_mlp is not None:
                 h_new = self.decoder_mlp(z)
@@ -319,7 +315,7 @@ class PHiLayer(torch.nn.Module):
                 ind_hist, ind_bin_edges = np.histogram(ind.flatten().cpu().numpy(), bins=512, density=True)
                 wandb.log({"custom/ind hist": wandb.Histogram(np_histogram=(ind_hist, ind_bin_edges))})
 
-            # Loss term -> KL divergence of the uniform prior / do not train but good to observe
+            # Loss term -> KL divergence between the posterior distribution and uniform prior / do not train but good to observe
             latent_losses = latent_losses.sum(-1) * padding_mask
             return_dict["tokenwise_latent_loss"] = latent_losses
 
