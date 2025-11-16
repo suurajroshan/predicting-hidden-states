@@ -1058,6 +1058,33 @@ def get_constant_schedule_with_warmup(
 
     return LambdaLR(optimizer, lr_lambda, last_epoch)
 
+
+def sequential_lr_scheduler(
+    optimizer: torch.optim.Optimizer,
+    num_warmup_steps: int,
+    num_decay_steps: int,
+    decay_lr_upto: float,
+    num_training_steps: int,
+    last_epoch=-1,
+) -> LambdaLR:
+    max_lr = optimizer.param_groups[0]['lr']
+    decay_lower_bound = decay_lr_upto / max_lr
+    def lr_lambda(current_step: int) -> float:
+        # Phase 1: Warmup (0 to num_warmup_steps)
+        if current_step < num_warmup_steps:
+            return current_step / max(1, num_warmup_steps)
+        
+        # Phase 2: Cosine decay (num_warmup_steps to num_warmup_steps + num_decay_steps)
+        elif current_step < num_warmup_steps + num_decay_steps:
+            progress = (current_step - num_warmup_steps) / num_decay_steps
+            cosine_decay = 0.5 * (1.0 + math.cos(math.pi * progress))
+            return decay_lower_bound + (1.0 - decay_lower_bound) * cosine_decay
+        
+        # Phase 3: Constant (after num_warmup_steps + num_decay_steps)
+        else:
+            return decay_lower_bound    
+    return LambdaLR(optimizer, lr_lambda, last_epoch)
+
 def cos_anneal(e0, e1, t0, t1, e):
     """ ramp from (e0, t0) -> (e1, t1) through a cosine schedule based on e \in [e0, e1] """
     alpha = max(0, min(1, (e - e0) / (e1 - e0))) # what fraction of the way through are we

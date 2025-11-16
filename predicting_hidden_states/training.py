@@ -863,7 +863,6 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         additional_logging_losses = {}
         if callable(getattr(self._model, "get_additional_losses", None)):
             next_token_prediction_loss = loss.clone()
-            print(loss.clone().detach().item())
             if self._ignore_main_training_loss:
                 loss = 0.0
 
@@ -903,6 +902,9 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
             pass
 
         self._profiler.start()
+        codebook0_before = self._model.self_prediction_layer.quantizer.codebooks[0].weight.detach().clone()
+        codebook1_before = self._model.self_prediction_layer.quantizer.codebooks[1].weight.detach().clone()
+
         # self.epochs_run should be non-zero when we're resuming from a checkpoint
         for curr_epoch in range(self.epochs_run, self.total_epochs):
 
@@ -973,6 +975,12 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
 
                     # Update the number of steps when the weights are updated
                     self.global_step += 1
+
+                    # debugging
+                    # codebook0_after = self._model.self_prediction_layer.quantizer.codebooks[0].weight.detach().clone()
+                    # codebook1_after = self._model.self_prediction_layer.quantizer.codebooks[1].weight.detach().clone()
+                    # print("Max change:", (codebook0_after - codebook0_before).abs().max())
+                    # print("Max change:", (codebook1_after - codebook1_before).abs().max())
 
                     loss_to_log = running_loss
                     pbar.update(1)

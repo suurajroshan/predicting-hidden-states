@@ -758,12 +758,14 @@ class RQ(nn.Module):
         
 
     def _get_posteriors(self):
-        posterior = nn.ModuleList([
-            nn.Sequential(encoder(self.dim, 2048), 
+        posterior = nn.Sequential(encoder(self.dim, 2048), 
                           encoder(2048, self.num_embeddings),)
-            ])
-        for _ in range(1, self.num_quantizers):
-            posterior.append(nn.Linear(self.dim, self.num_embeddings))
+        # posterior = nn.ModuleList([
+        #     nn.Sequential(encoder(self.dim, 2048), 
+        #                   encoder(2048, self.num_embeddings),)
+        #     ])
+        # for _ in range(1, self.num_quantizers):
+        #     posterior.append(nn.Linear(self.dim, self.num_embeddings))
         return posterior
 
     def _get_codebooks(self):
@@ -783,7 +785,8 @@ class RQ(nn.Module):
 
         # TODO: modify posterior to handle both single module and module list 
         for i in range(self.num_quantizers):
-            z = self.posteriors[i](residual)  # shape: (bsz, seq_len, num_embeddings)
+            z = self.posteriors(residual)
+            # z = self.posteriors[i](residual)  # shape: (bsz, seq_len, num_embeddings)
             z_q, latent_loss, ind = self._get_codes_and_indices(z, i)
 
             self.cache_zqs(z_q)

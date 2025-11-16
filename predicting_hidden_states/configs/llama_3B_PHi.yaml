@@ -62,7 +62,7 @@ batch_size: 8
 # ----------------------------------------------------------------------------------
 # Training loop settings
 epochs: 100
-max_total_steps: 10000 # Stop training after this many global steps
+max_total_steps: 50000 # Stop training after this many global steps
 max_steps_per_epoch: null # Optional: limit steps per epoch
 
 # Training mode
@@ -73,12 +73,14 @@ ignore_main_training_loss: false # If true, trains only on PHi loss, ignoring ne
 optimizer:
   _component_: torch.optim.AdamW
   fused: true
-  lr: 1.0e-4
+  lr: 1.0e-3
 
 # Learning rate scheduler
 lr_scheduler:
-  _component_: modules.get_constant_schedule_with_warmup
-  num_warmup_steps: 0
+  _component_: modules.sequential_lr_scheduler
+  num_warmup_steps: 500
+  num_decay_steps: 10000
+  decay_lr_upto: 1e-4
 
 # quanztization optims
 # decaying the temperature in the case of gumbel softmax
@@ -133,7 +135,7 @@ evaluate_every_n_steps: 500
 
 # Logging configuration
 output_dir: /home/woody/iwbi/iwbi106h/suuraj/wandb_logs # Fallback output directory
-log_every_n_steps: 5
+log_every_n_steps: 50
 log_peak_memory_stats: false
 
 metric_logger:
