@@ -296,7 +296,9 @@ class PHiLayer(torch.nn.Module):
 
         else:
             # z = self.posterior_mlp(h)
-            h_new, latent_losses, inds, zs = self.quantizer(h)
+            h_new, latent_losses, inds, zs, zqs = self.quantizer(h)
+
+            print(zqs.shape)
 
             for i in range(self.quantizer.num_quantizers):
                 wandb.log({"num unique idxs": len(set(inds[i].flatten().tolist()))})
@@ -607,7 +609,7 @@ class GumbelQuantize(nn.Module):
 
     def forward(self, logits):
         # TODO: temperature replace with 1
-        one_hot = F.gumbel_softmax(logits, tau=1, dim=2, hard=True) # shape: (bsz, num_tokens, num_embeddings)
+        one_hot = F.gumbel_softmax(logits, tau=self.temperature, dim=2, hard=True) # shape: (bsz, num_tokens, num_embeddings)
         z_q = einsum('b s n, n d -> b s d', one_hot, self.embed.weight) # shape: (bsz, num_tokens, embedding_dim)
         ind = one_hot.argmax(dim=2)
 
@@ -782,8 +784,10 @@ class RQ(nn.Module):
         indices = []
         latent_losses = []
         zs = []
+        zqs = []
 
-        # TODO: modify posterior to handle both single module and module list 
+        # TODO: modify posterior to handle both single module and module list
+        # results show better when using shared posterior
         for i in range(self.num_quantizers):
             z = self.posteriors(residual)
             # z = self.posteriors[i](residual)  # shape: (bsz, seq_len, num_embeddings)
@@ -798,22 +802,13 @@ class RQ(nn.Module):
             indices.append(ind)
             latent_losses.append(latent_loss)
             zs.append(z)
-        
+        zqs.append(quantized_out.detach().copy())
         quantized_out = self.decoder(quantized_out)
         indices = torch.stack(indices, dim=0)
         latent_losses = torch.stack(latent_losses, dim=0)
         zs = torch.stack(zs, dim=0)
-        return quantized_out, latent_losses, indices, zs
-
-    @property
-    def get_quantized_inputs(self):
-        return torch.stack(self._zqs)
-
-    def cache_zqs(self, z_q):
-        self._zqs.append(z_q)
-
-    def clear_cache_zqs(self):
-        self._zqs = [[] for _ in range(self.num_quantizers)][0]
+        zqs = torch.stack(zqs, dim=0)
+        return quantized_out, latent_losses, indices, zs, zqs
 
 
 class encoder(nn.Module):

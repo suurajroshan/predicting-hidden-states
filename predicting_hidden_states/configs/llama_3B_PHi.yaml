@@ -80,7 +80,10 @@ lr_scheduler:
   _component_: modules.sequential_lr_scheduler
   num_warmup_steps: 500
   num_decay_steps: 10000
-  decay_lr_upto: 1e-4
+  decay_lr_upto: 1e-3
+# lr_scheduler:
+#   _component_: modules.get_constant_schedule_with_warmup
+#   num_warmup_steps: 1000
 
 # quanztization optims
 # decaying the temperature in the case of gumbel softmax

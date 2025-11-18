@@ -691,6 +691,9 @@ def pfa_training_evaluation(recipe,
     # losses.append("latent_loss0")
     # losses.append("phi_losses1")
     # losses.append("phi_losses2")
+    # for i in range(recipe._model.self_prediction_layer.quantizer.num_quantizers):
+    #     if 
+    #     losses.append(f"phi_losses{i}")
     if "phi_losses" in datapoints[0]:
         losses.append("phi_losses")
         interestingness_criterion = "phi_losses"
@@ -721,6 +724,9 @@ def pfa_training_evaluation(recipe,
         losses=losses,
         levels=levels
     )
+
+    print(losses_vs_learning_levels)
+    print(losses_vs_learning_levels_statistics)
 
     if ic_generalization_evaluation:
         length_generalization_results = evaluate_language_generation_length(recipe, num_samples=500)
