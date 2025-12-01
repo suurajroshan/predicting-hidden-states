@@ -118,8 +118,6 @@ def generate_per_token_losses(recipe, batch):
         reduction="none",
         ignore_index=recipe._loss_fn.ignore_index,
     ).view_as(labels)
-    print('logits size: ',logits.size())
-    print(losses.mean().detach().item())
     decoded_tokens = decode_token_by_token(batch["tokens"], tokenizer=recipe._tokenizer)
     per_token_losses = {
         "tokens": batch["tokens"],
@@ -684,9 +682,14 @@ def pfa_training_evaluation(recipe,
     )
     losses = ["next_token_losses"]
     interestingness_criterion = "next_token_losses"
-    for i in range(recipe._model.self_prediction_layer.quantizer.num_quantizers):
-        losses.append(f"latent_loss{i}")
-        losses.append(f"phi_losses{i}")
+    
+    # if recipe._model.self_prediction_layer.quantizer is not None:
+    #     for i in range(recipe._model.self_prediction_layer.quantizer.num_quantizers):
+    #         losses.append(f"latent_loss{i}")
+    #         losses.append(f"phi_losses{i}")
+    # else:
+    #     losses.append("latent_losses")
+    
     # losses.append("latent_loss1")
     # losses.append("latent_loss0")
     # losses.append("phi_losses1")
@@ -694,9 +697,9 @@ def pfa_training_evaluation(recipe,
     # for i in range(recipe._model.self_prediction_layer.quantizer.num_quantizers):
     #     if 
     #     losses.append(f"phi_losses{i}")
-    if "phi_losses" in datapoints[0]:
-        losses.append("phi_losses")
-        interestingness_criterion = "phi_losses"
+    # if "phi_losses" in datapoints[0]:
+    #     losses.append("phi_losses")
+    #     interestingness_criterion = "phi_losses"
 
     level_names = [
         "memorized sequence",
@@ -724,9 +727,6 @@ def pfa_training_evaluation(recipe,
         losses=losses,
         levels=levels
     )
-
-    print(losses_vs_learning_levels)
-    print(losses_vs_learning_levels_statistics)
 
     if ic_generalization_evaluation:
         length_generalization_results = evaluate_language_generation_length(recipe, num_samples=500)

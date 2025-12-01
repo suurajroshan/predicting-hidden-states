@@ -144,7 +144,18 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         self._train_whole_model = cfg.get("train_whole_model", True)
         self._ignore_main_training_loss = cfg.get("ignore_main_training_loss", False)
         self._ic_generalization_eval = cfg.get("ic_generalization_eval", False)
+        self.info_bottleneck = cfg.get("model", {}).get("self_prediction_information_bottleneck", "continuous")
         self.cfg = cfg
+
+        # assertions for configurations
+        if self.info_bottleneck == 'continuous':
+            assert cfg.get("model", {}).get("self_prediction_module", None) is None, ( 
+                "Config Error: Self prediction module must be None when using continuous information bottleneck."
+            )
+        elif self.info_bottleneck == 'residual_quantize' or self.info_bottleneck == 'vector_quantize':
+            assert cfg.get("model", {}).get("self_prediction_module", None) is not None, (
+                "Config Error: Self prediction module must be defined when using quantized information bottleneck."
+            )
 
     def load_checkpoint(self, cfg_checkpointer: DictConfig) -> Dict[str, Any]:
         """
@@ -281,15 +292,16 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
             else None,
         )
 
-        info_bottleneck = cfg.get("model", {}).get("self_prediction_information_bottleneck", None)
-        log.info(f'information bottleneck: {info_bottleneck}')
-        print('reconstruction loss factor: ', cfg.model.self_prediction_module.reconstruction_loss_factor)
-        print('phi loss factor: ', cfg.model.phi_loss_factor)
-        print('self critic loss factor: ', cfg.model.self_critic_loss_factor)
-        if info_bottleneck == 'quantized':
+        log.info(f'information bottleneck: {self.info_bottleneck}')
+        log.info(f'phi loss factor: {cfg.model.phi_loss_factor}')
+        log.info(f'self critic loss factor: {cfg.model.self_critic_loss_factor}')
+        if self.info_bottleneck == 'residual_quantize' or self.info_bottleneck == 'vector_quantize':
+            log.info(f'reconstruction loss factor: {cfg.model.self_prediction_module.reconstruction_loss_factor}')
             self.get_temperature = config.instantiate(cfg.temperature_scheduler)
             self.reconstruction_loss_factor = cfg.model.self_prediction_module.reconstruction_loss_factor
-
+            if self.info_bottleneck == 'vector_quantize':
+                self.get_beta = config.instantiate(cfg.beta_scheduler)
+        
         # initialize loss
         self._loss_fn = config.instantiate(cfg.loss)
 
@@ -853,7 +865,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         if not isinstance(logits, list):
             labels = labels.reshape(-1)
             logits = logits.reshape(-1, logits.size(-1))
-
+        
         # Compute loss
         loss = self._loss_fn(logits, labels)
         assert loss.numel() == 1, f"Loss should be a scalar. Use a loss function that aggregates the loss!"
@@ -902,8 +914,6 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
             pass
 
         self._profiler.start()
-        codebook0_before = self._model.self_prediction_layer.quantizer.codebooks[0].weight.detach().clone()
-        codebook1_before = self._model.self_prediction_layer.quantizer.codebooks[1].weight.detach().clone()
 
         # self.epochs_run should be non-zero when we're resuming from a checkpoint
         for curr_epoch in range(self.epochs_run, self.total_epochs):
@@ -940,9 +950,11 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                 )  # this might be an overestimate since all padding tokens are counted
 
                 # only assign temperature when using gumbel quantization
-                if self.cfg.model.self_prediction_information_bottleneck == 'quantized':
+                if self.info_bottleneck == 'residual_quantize' or self.info_bottleneck == 'vector_quantize':
                     self._model.self_prediction_layer.quantizer.temperature = self.get_temperature(self.global_step)
                     self._model.self_prediction_layer.reconstruction_loss_factor = self.reconstruction_loss_factor
+                    if self.info_bottleneck == 'vector_quantize':
+                        self._model.self_prediction_layer.quantizer.kld_scale = self.get_beta(self.global_step)
                     # for debugging, ignore, delete later
                     try:
                         if idx % 1000 == 0:
@@ -987,6 +999,12 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                     pbar.set_description(
                         f"{curr_epoch + 1}|{self.global_step}|Loss: {loss_to_log}"
                     )
+
+                    if self.cfg.model.self_prediction_information_bottleneck == 'residual_quantize' and \
+                        self.cfg.model.self_prediction_module.save_codebooks_for_qinco and \
+                        self.global_step % self.cfg.model.self_prediction_module.save_every_n_steps  == 0:
+                        self._model.self_prediction_layer.quantizer.save_codebooks()
+
 
                     # Log per-step metrics
                     if (

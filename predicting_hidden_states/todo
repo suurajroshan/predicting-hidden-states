@@ -1,0 +1,6 @@
+- run the rq with normal rq section uncommented
+sbatch slurm/train_rq_0.1B.sh
+
+- run the vq for 3B model and see the results how they compared to the gumbel softmax
+
+- 

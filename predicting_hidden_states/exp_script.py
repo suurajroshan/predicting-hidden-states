@@ -14,25 +14,34 @@ def main():
 
     multiprocessing.set_start_method("spawn", force=True)
 
-    cfg = OmegaConf.load("configs/llama_0.1B_PHi.yaml")
+    # 0.1B model configs
+    # cfg = OmegaConf.load("configs/llama_0.1B_PHi.yaml")
+    # cfg = OmegaConf.load("configs/llama_0.1B_PHi_residual-gumbel-quantizer.yaml")
+    
+    
+    # 3B model configs
     # cfg = OmegaConf.load("configs/llama_3B_PHi.yaml")
     # cfg = OmegaConf.load("configs/llama_3B_self_prediction.yaml")
 
     # override the cfg with cli parameters
     cli_cfg = OmegaConf.from_dotlist(sys.argv[1:])
     cli_debug_flag = cli_cfg.pop("debug", False)
+    cli_cfg_file = cli_cfg.pop("config_file", None)
+    if cli_cfg_file is None:
+        raise Exception ("No config file")
+    print(f"Loading config file from command line: {cli_cfg_file}")
+    cfg = OmegaConf.load(cli_cfg_file)
     cfg = OmegaConf.merge(cfg, cli_cfg)
 
     cfg.evaluate_every_n_steps = 1000
     cfg.checkpoint_every_n_steps = 1000
 
-
     if cli_debug_flag:
         print('Set to debug mode')
-        cfg.evaluate_every_n_steps = 50
-        cfg.evaluate_n_datapoints = 50
+        cfg.evaluate_every_n_steps = 5
+        cfg.evaluate_n_datapoints = 5
         cfg.checkpoint_every_n_steps = 100000
-        cfg.log_every_n_steps = 50
+        cfg.log_every_n_steps = 5
         # cfg.metric_logger.mode="disabled"
 
     cfg.dataset.packed_sequence_length = 2048

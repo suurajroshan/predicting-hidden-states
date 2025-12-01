@@ -24,12 +24,12 @@ from modules.architectures import (
     LSTMPHi,
 )
 from modules.self_prediction import (
-    RQ,
     PHiLayer,
     PHiMLP,
-    vae_encoder,
-    GumbelQuantize,
-    vae_decoder,
+)
+
+from modules.quantizers import (
+    quantizer_module
 )
 
 from torchtune.modules.common_utils import reparametrize_as_dtype_state_dict_post_hook
@@ -370,27 +370,7 @@ def llama3_phi(
     if use_self_prediction:
         prior_attention = None
 
-        quantizer_module = {
-            'quantized': GumbelQuantize,
-            'continuous': None,
-        }[self_prediction_information_bottleneck]
-
-        if self_prediction_information_bottleneck == 'quantized':
-            codeword_dim = self_prediction_module['codeword_dim']
-            codebook_dim = self_prediction_module['codebook_dim']
-            num_quantizers = self_prediction_module["num_quantizers"]
-            embed_dim = codeword_dim  # override embed dim if using quantization
-            hidden_dim = codeword_dim * 8 // 3 # TODO: currrently a heuristic, can be parameterized later
-            print(f'number of embeddings: {codebook_dim}')
-            print(f'embedding dimension: {codeword_dim}')
-            # quantizer_mlp = quantizer_module(num_embeddings=codebook_dim, embedding_dim=codeword_dim)
-            posterior_mlp = vae_encoder(codebook_dim=codebook_dim, tok_emb_dim=codeword_dim)
-            decoder_mlp = vae_decoder(input_channels=codeword_dim, tok_emb_dim=embed_dim)
-            quantizer_mlp = RQ(num_quantizers, codebook_dim, codeword_dim)
-        else:
-            posterior_mlp = nn.Linear(embed_dim, 2 * embed_dim, bias=False)
-            quantizer_mlp = quantizer_module
-            decoder_mlp=nn.Linear(embed_dim, embed_dim, bias=False)
+        posterior_mlp, quantizer_mlp, decoder_mlp = quantizer_module(self_prediction_information_bottleneck, self_prediction_module)
 
         # TODO: remove the dynamic assigning of embedding dim in prior attn, do it upstream
         if use_self_attention and phi_loss_factor > 0.0:
@@ -409,20 +389,24 @@ def llama3_phi(
                 max_seq_len=max_seq_len,
                 attn_dropout=attn_dropout,
             )
-            if self_prediction_information_bottleneck == 'quantized':
+
+            if self_prediction_information_bottleneck == 'residual_quantize':
+                num_quantizers = self_prediction_module["num_quantizers"]
                 prior_attention = nn.ModuleList([prior_attention for _ in range(num_quantizers)])
 
                 sa_norm = nn.ModuleList([RMSNorm(dim=embed_dim, eps=norm_eps) for _ in range(num_quantizers)])
+
+        prior_prediction_mlp = self_prediction_mlp(dim=embed_dim, 
+                                                   hidden_dim=hidden_dim,
+                                                   output_dim=[self_prediction_module["codebook_dim"] if quantizer_module is not None else 2*embed_dim][0],
+                                                   num_layers=self_prediction_num_layers)
 
         self_prediction_layer = PHiLayer(
             d_model=embed_dim,
             posterior_mlp=posterior_mlp,
             quantizer_mlp=quantizer_mlp,
             decoder_mlp=decoder_mlp,
-            prior_prediction_mlp=self_prediction_mlp(dim=embed_dim,
-                                                     hidden_dim=hidden_dim,
-                                                     output_dim=[codebook_dim if quantizer_module is not None else 2*embed_dim][0],
-                                                     num_layers=self_prediction_num_layers),
+            prior_prediction_mlp=prior_prediction_mlp,
             prior_prediction_attention=prior_attention,
             sa_norm=sa_norm if prior_attention else None,
             self_critic_loss_factor=self_critic_loss_factor,
