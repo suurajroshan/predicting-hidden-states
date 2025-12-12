@@ -194,9 +194,9 @@ def nl_learning_levels_evaluation(recipe, num_datapoints=500):
     #     losses.append("phi_losses")
     #     interestingness_criterion = "phi_losses"
     
-    for i in range(recipe._model.self_prediction_layer.quantizer.num_quantizers):
-        losses.append(f"latent_loss{i}")
-        losses.append(f"phi_losses{i}")
+    # for i in range(recipe._model.self_prediction_layer.quantizer.num_quantizers):
+    #     losses.append(f"latent_loss{i}")
+    #     losses.append(f"phi_losses{i}")
 
 
     levels = (0, 1, 2, 3, 4)

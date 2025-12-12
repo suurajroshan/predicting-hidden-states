@@ -3,6 +3,9 @@
 slurm/
 tmp/
 checkpoints/
+test/
+rq-test/
+.ipynb_checkpoints/
 
 # Ignore caches
 *.pyc

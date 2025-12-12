@@ -26,11 +26,13 @@ model:
     shared_encoder: false
     shared_decoder: false
     reconstruction_loss_factor: 0.00001
-    save_codebooks_for_qinco: false
+    save_codebooks_for_qinco: true
 
 
   # Loss weights for the PHi mechanism
-  phi_loss_factor: 0.001
+  phi_loss_factor: 
+    posterior: 0.001
+    prior: 0.001
   self_critic_loss_factor: 0.001
 
   # PHi layer architecture and behavior

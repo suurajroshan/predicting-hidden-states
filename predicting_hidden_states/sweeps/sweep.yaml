@@ -1,0 +1,16 @@
+program: tune
+command:
+  - tune
+  - run
+  - training.py
+  - --config
+  - configs/llama_0.1B_PHi.yaml
+
+method: grid
+metric: 
+  goal: minimize
+  name: next_token_losses
+
+parameters:  
+  seed:
+    values: [42, 1337, 2023, 31415, 123456]

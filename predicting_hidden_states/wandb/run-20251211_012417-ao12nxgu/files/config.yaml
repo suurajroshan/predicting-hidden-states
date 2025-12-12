@@ -1,0 +1,230 @@
+wandb_version: 1
+
+_wandb:
+  desc: null
+  value:
+    python_version: 3.11.12
+    cli_version: 0.19.11
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1765412657
+    t:
+      1:
+      - 1
+      - 49
+      - 51
+      - 55
+      2:
+      - 1
+      - 49
+      - 51
+      - 55
+      3:
+      - 3
+      - 7
+      - 14
+      - 23
+      - 37
+      - 66
+      4: 3.11.12
+      5: 0.19.11
+      8:
+      - 5
+      9:
+        2: torchtune
+      13: linux-x86_64
+    m:
+    - 1: global_step
+      6:
+      - 3
+    - 1: next_token_losses._type
+      5: 1
+      6:
+      - 1
+    - 1: next_token_losses.sha256
+      5: 1
+      6:
+      - 1
+    - 1: next_token_losses.size
+      5: 1
+      6:
+      - 1
+    - 1: next_token_losses.path
+      5: 1
+      6:
+      - 1
+    - 1: phi_losses._type
+      5: 1
+      6:
+      - 1
+    - 1: phi_losses.sha256
+      5: 1
+      6:
+      - 1
+    - 1: phi_losses.size
+      5: 1
+      6:
+      - 1
+    - 1: phi_losses.path
+      5: 1
+      6:
+      - 1
+    - 1: latent_losses._type
+      5: 1
+      6:
+      - 1
+    - 1: latent_losses.sha256
+      5: 1
+      6:
+      - 1
+    - 1: latent_losses.size
+      5: 1
+      6:
+      - 1
+    - 1: latent_losses.path
+      5: 1
+      6:
+      - 1
+    - 1: interestingness_ratio
+      5: 1
+      6:
+      - 1
+seed:
+  desc: null
+  value: 42
+device:
+  desc: null
+  value: cuda
+dtype:
+  desc: null
+  value: bf16
+compile:
+  desc: null
+  value: false
+model:
+  desc: null
+  value:
+    _component_: models.llama3_ascii_self_prediction_0_1b
+    use_self_prediction: true
+    self_prediction_layer: 10
+    phi_loss_factor: 0.001
+    self_critic_loss_factor: 0.1
+    use_self_attention: true
+    detach_hidden_states: false
+    detach_targets: false
+    deterministic_at_inference: false
+    chance_to_deterministic: 0.0
+train_from_scratch:
+  desc: null
+  value: true
+tokenizer:
+  desc: null
+  value:
+    _component_: models.ascii_tokenizer
+    max_seq_len: 2048
+dataset:
+  desc: null
+  value:
+    _component_: dataset_classes.learning_levels_pfa_dataset
+    packed_on_the_fly: true
+    packed_sequence_length: 2048
+    split_across_pack: false
+    num_workers: 0
+shuffle:
+  desc: null
+  value: true
+batch_size:
+  desc: null
+  value: 16
+epochs:
+  desc: null
+  value: 100
+max_total_steps:
+  desc: null
+  value: 100000
+max_steps_per_epoch:
+  desc: null
+  value: null
+train_whole_model:
+  desc: null
+  value: true
+ignore_main_training_loss:
+  desc: null
+  value: false
+optimizer:
+  desc: null
+  value:
+    _component_: torch.optim.AdamW
+    fused: true
+    lr: 0.0003
+lr_scheduler:
+  desc: null
+  value:
+    _component_: modules.get_constant_schedule_with_warmup
+    num_warmup_steps: 500
+temperature_scheduler:
+  desc: null
+  value:
+    _component_: modules.architectures.temperature_scheduler
+    global_steps: 30000
+    temp_start: 1
+    temp_end: 0.1
+loss:
+  desc: null
+  value:
+    _component_: torchtune.modules.loss.CEWithChunkedOutputLoss
+gradient_accumulation_steps:
+  desc: null
+  value: 1
+clip_grad_norm:
+  desc: null
+  value: 1.0
+fsdp_cpu_offload:
+  desc: null
+  value: false
+enable_activation_checkpointing:
+  desc: null
+  value: true
+checkpointer:
+  desc: null
+  value:
+    _component_: utils.checkpointer.FullModelTorchTuneCheckpointer
+    recipe_checkpoint: null
+    output_dir: /home/woody/iwbi/iwbi106h/suuraj/models/self-prediction-models/learning_levels_sweep_$WANDB_RUN_ID/
+    model_type: IDSIA
+    checkpoint_dir: /home/woody/iwbi/iwbi106h/suuraj/models/self-prediction-models/learning_levels_sweep_$WANDB_RUN_ID/
+resume_from_checkpoint:
+  desc: null
+  value: false
+checkpoint_every_n_steps:
+  desc: null
+  value: 1000
+overwrite_checkpoints:
+  desc: null
+  value: true
+save_optimizer_state:
+  desc: null
+  value: false
+evaluate_every_n_steps:
+  desc: null
+  value: 10
+output_dir:
+  desc: null
+  value: /home/woody/iwbi/iwbi106h/suuraj/wandb_logs
+log_every_n_steps:
+  desc: null
+  value: 50
+log_peak_memory_stats:
+  desc: null
+  value: false
+metric_logger:
+  desc: null
+  value:
+    _component_: torchtune.training.metric_logging.WandBLogger
+    project: self_prediction
+    log_dir: /home/woody/iwbi/iwbi106h/suuraj/wandb_logs
+    mode: online
+nproc_per_node:
+  desc: null
+  value: 1

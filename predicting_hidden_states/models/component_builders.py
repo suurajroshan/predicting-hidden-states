@@ -370,7 +370,9 @@ def llama3_phi(
     if use_self_prediction:
         prior_attention = None
 
-        posterior_mlp, quantizer_mlp, decoder_mlp = quantizer_module(self_prediction_information_bottleneck, self_prediction_module)
+        posterior_mlp, quantizer_mlp, decoder_mlp = quantizer_module(self_prediction_information_bottleneck, 
+                                                                     self_prediction_module,
+                                                                     embed_dim,)
 
         # TODO: remove the dynamic assigning of embedding dim in prior attn, do it upstream
         if use_self_attention and phi_loss_factor > 0.0:
@@ -398,7 +400,7 @@ def llama3_phi(
 
         prior_prediction_mlp = self_prediction_mlp(dim=embed_dim, 
                                                    hidden_dim=hidden_dim,
-                                                   output_dim=[self_prediction_module["codebook_dim"] if quantizer_module is not None else 2*embed_dim][0],
+                                                   output_dim=[self_prediction_module["codebook_dim"] if self_prediction_information_bottleneck != 'continuous' else 2*embed_dim][0],
                                                    num_layers=self_prediction_num_layers)
 
         self_prediction_layer = PHiLayer(
@@ -420,7 +422,7 @@ def llama3_phi(
             use_information_bottleneck=use_information_bottleneck,
         )
 
-        wandb.watch(self_prediction_layer, log='all') # watching phi model
+        # wandb.watch(self_prediction_layer, log='all') # watching phi model
 
     # Assemble the final model
     return TransformerDecoderPHi(

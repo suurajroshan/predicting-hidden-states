@@ -6,6 +6,7 @@
 
 # from dataclasses import dataclass
 
+import os
 import matplotlib
 import matplotlib.colors as mcolors
 
@@ -26,6 +27,10 @@ from dataset_classes import PackedOnTheFlyDataset
 from models.tokenizer import ASCIITokenizer
 from evaluation.custom_generation import generate, generate_next_token_only_lowercase
 from utils.misc import bootstrapped_mean_and_ci
+
+import pickle
+
+log = utils.get_logger("DEBUG")
 
 
 def decode_token_by_token(tokens, tokenizer):
@@ -680,23 +685,17 @@ def pfa_training_evaluation(recipe,
         dataset=dataset,
         num_datapoints=num_datapoints,
     )
+    # with open(os.path.join(recipe.pickle_dir, "eval_metrics.pkl"), "wb") as f:
+    #     pickle.dump({recipe.global_step: datapoints}, f)
+
     losses = ["next_token_losses"]
     interestingness_criterion = "next_token_losses"
+
+    losses.append("phi_losses",)
+    losses.append("latent_losses",)
+
+    log.info(datapoints[0].keys())
     
-    # if recipe._model.self_prediction_layer.quantizer is not None:
-    #     for i in range(recipe._model.self_prediction_layer.quantizer.num_quantizers):
-    #         losses.append(f"latent_loss{i}")
-    #         losses.append(f"phi_losses{i}")
-    # else:
-    #     losses.append("latent_losses")
-    
-    # losses.append("latent_loss1")
-    # losses.append("latent_loss0")
-    # losses.append("phi_losses1")
-    # losses.append("phi_losses2")
-    # for i in range(recipe._model.self_prediction_layer.quantizer.num_quantizers):
-    #     if 
-    #     losses.append(f"phi_losses{i}")
     # if "phi_losses" in datapoints[0]:
     #     losses.append("phi_losses")
     #     interestingness_criterion = "phi_losses"
@@ -736,7 +735,21 @@ def pfa_training_evaluation(recipe,
 
     plotly_figure_dict = {}
     interestingness_ratio = 0.0
+
+    group_losses = [[]]
+    # group_losses = [
+    #     ["prediction_entropy", "target_entropy"],
+    #     ]
+
+    loss_filter = [False for _ in losses]
     for i, loss in enumerate(losses):
+        for group in group_losses:
+            if loss in group:
+                loss_filter[i] = True
+
+    for i, loss in enumerate(losses):
+        if loss_filter[i]:
+            continue
         means = [
             losses_vs_learning_levels_statistics[loss][level]["mean"]
             for level in levels
@@ -757,6 +770,37 @@ def pfa_training_evaluation(recipe,
             xaxis=dict(tickvals=levels, ticktext=[level_names[l] for l in levels]),
         )
         plotly_figure_dict[loss] = fig
+
+    for group in group_losses:
+        if group == []:
+            continue
+        group_means = []
+        fig = go.Figure()
+        for loss in group:
+            means = [
+                losses_vs_learning_levels_statistics[loss][level]["mean"]
+                for level in levels
+            ]
+            group_means.append(means)
+            if loss == interestingness_criterion:
+                if len(interesting_levels) > 0 and len(uninteresting_levels) > 0:
+                    interesting_means = [means[level] for level in interesting_levels]
+                    uninteresting_means = [means[level] for level in uninteresting_levels]
+                    interestingness_ratio = np.mean(interesting_means) / np.mean(
+                        uninteresting_means
+                    )
+            fig.add_trace(go.Bar(x=levels, y=means, name=loss.capitalize() ))
+        # add level names
+        fig.update_layout(
+            title=f"{loss.capitalize()}",
+            xaxis_title="Learning level",
+            yaxis_title="",
+            xaxis=dict(tickvals=levels, ticktext=[level_names[l] for l in levels]),
+        )
+        plotly_figure_dict[loss] = fig
+
+
+
     recipe._model.train()
     eval_values_dict = {
         "interestingness_ratio": interestingness_ratio,

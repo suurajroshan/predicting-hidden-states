@@ -1,6 +1,9 @@
-- run the rq with normal rq section uncommented
-sbatch slurm/train_rq_0.1B.sh
-
 - run the vq for 3B model and see the results how they compared to the gumbel softmax
 
-- 
+- finish the qinco code
+
+- experiments with shared / unshared posteriors and decoders for the rq for both 0.1B and 3B models
+
+- check if adding reconstruction loss at every step for rq helps with faster training loss convergence
+
+- think about why PQ can/cannot be applied in PHi layer

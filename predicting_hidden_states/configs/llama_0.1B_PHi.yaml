@@ -19,7 +19,7 @@ model:
 
   # Loss weights for the PHi mechanism
   phi_loss_factor: 0.001
-  self_critic_loss_factor: 0.001
+  self_critic_loss_factor: 0.1
 
   # PHi layer architecture and behavior
   use_self_attention: true # Whether the PHi prior uses self-attention
@@ -136,4 +136,4 @@ metric_logger:
   # _component_: torchtune.training.metric_logging.DiskLogger  # use this if wandb is not installed
   project: self_prediction
   log_dir: ${output_dir}
-  mode: disabled
+  mode: online

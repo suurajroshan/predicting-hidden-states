@@ -28,9 +28,11 @@ from torchtune.recipe_interfaces import FTRecipeInterface
 from torchtune.training import DummyProfiler, PROFILER_KEY
 from torchtune.training.activations import apply_selective_activation_checkpointing
 from utils.meters import MultiMeter
+from utils.misc import seed_everything
 from huggingface_hub import snapshot_download
 
 from tqdm import tqdm
+import wandb
 
 log = utils.get_logger("DEBUG")
 
@@ -118,7 +120,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
 
         # _is_rank_zero is used primarily for logging. In the future, the logger
         # should directly take care of this
-        self._world_size, rank = training.get_world_size_and_rank()
+        self._world_size, rank = utils.get_world_size_and_rank()
         self._is_rank_zero = rank == 0
 
         # Training cfg
@@ -135,6 +137,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         # These are public properties which are updated by the checkpoint loader
         # when ``resume_from_checkpoint`` is `True` or validated in tests
         self.seed = training.set_seed(seed=cfg.seed)
+        seed_everything(self.seed)
         self.epochs_run = 0
         self.total_epochs = cfg.epochs
         self.max_total_steps = cfg.max_total_steps
@@ -175,7 +178,6 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                     local_dir=cfg_checkpointer["checkpoint_dir"],
                     local_dir_use_symlinks=False,
                 )
-
 
         self._checkpointer = config.instantiate(
             cfg_checkpointer,
@@ -250,8 +252,11 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                 try:
                     run_id = self._metric_logger._wandb.run.id
                     output_dir = str(output_dir).replace("$WANDB_RUN_ID", run_id)
-                    print("run id: ", run_id)
                     output_dir = PosixPath(output_dir)
+
+                    self.pickle_dir = output_dir
+
+                    print("run id: ", run_id)
                 except AttributeError:
                     print(
                         "When using the '$WANDB_RUN_ID' variable in the output folder name, the logger should be wandb"
@@ -295,7 +300,9 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         log.info(f'information bottleneck: {self.info_bottleneck}')
         log.info(f'phi loss factor: {cfg.model.phi_loss_factor}')
         log.info(f'self critic loss factor: {cfg.model.self_critic_loss_factor}')
-        if self.info_bottleneck == 'residual_quantize' or self.info_bottleneck == 'vector_quantize':
+        if self.info_bottleneck == 'residual_quantize' or \
+                self.info_bottleneck == 'vector_quantize' or \
+                self.info_bottleneck == 'residual_quantize_qinco':
             log.info(f'reconstruction loss factor: {cfg.model.self_prediction_module.reconstruction_loss_factor}')
             self.get_temperature = config.instantiate(cfg.temperature_scheduler)
             self.reconstruction_loss_factor = cfg.model.self_prediction_module.reconstruction_loss_factor
@@ -663,7 +670,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         DistributedSamplers with Map-style Datasets which fit into memory. Other samplers,
         iterable dataset_classes and streaming dataset_classes are not supported.
         """
-        world_size, rank = training.get_world_size_and_rank()
+        world_size, rank = utils.get_world_size_and_rank()
 
         if isinstance(cfg_dataset, ListConfig):
             datasets = [
@@ -894,7 +901,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         # clean up before training begins
         training.cleanup_before_training()
 
-        world_size, rank = training.get_world_size_and_rank()
+        world_size, rank = utils.get_world_size_and_rank()
 
         # zero out the gradients before starting training
         # self._optimizer.zero_grad()
@@ -950,11 +957,14 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                 )  # this might be an overestimate since all padding tokens are counted
 
                 # only assign temperature when using gumbel quantization
-                if self.info_bottleneck == 'residual_quantize' or self.info_bottleneck == 'vector_quantize':
+                if self.info_bottleneck == 'residual_quantize' \
+                        or self.info_bottleneck == 'vector_quantize' \
+                        or self.info_bottleneck == 'residual_quantize_qinco':
                     self._model.self_prediction_layer.quantizer.temperature = self.get_temperature(self.global_step)
                     self._model.self_prediction_layer.reconstruction_loss_factor = self.reconstruction_loss_factor
                     if self.info_bottleneck == 'vector_quantize':
                         self._model.self_prediction_layer.quantizer.kld_scale = self.get_beta(self.global_step)
+
                     # for debugging, ignore, delete later
                     try:
                         if idx % 1000 == 0:
@@ -1000,10 +1010,11 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                         f"{curr_epoch + 1}|{self.global_step}|Loss: {loss_to_log}"
                     )
 
-                    if self.cfg.model.self_prediction_information_bottleneck == 'residual_quantize' and \
+                    if self.cfg.get("model", {}).get("self_prediction_module", None) is not None and self.cfg.model.self_prediction_information_bottleneck == 'residual_quantize' and \
                         self.cfg.model.self_prediction_module.save_codebooks_for_qinco and \
-                        self.global_step % self.cfg.model.self_prediction_module.save_every_n_steps  == 0:
-                        self._model.self_prediction_layer.quantizer.save_codebooks()
+                        self.global_step % self.cfg.model.self_prediction_module.save_every_n_steps == 0:
+                        
+                        self._model.self_prediction_layer.quantizer.save_codebooks(self.global_step)
 
 
                     # Log per-step metrics
@@ -1041,7 +1052,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                                 ic_generalization_evaluation=self._ic_generalization_eval
                             )
                         else:
-                            plotly_figure_dict, eval_values_dict = nl_learning_levels_evaluation(self)
+                            plotly_figure_dict, eval_values_dict = nl_learning_levels_evaluation(self, self._evaluate_n_datapoints)
 
                         log_dict = plotly_figure_dict
                         for key, value in eval_values_dict.items():
@@ -1130,10 +1141,21 @@ def recipe_main(cfg: DictConfig) -> None:
 
     config.log_config(recipe_name="FullTrainingRecipeDistributed", cfg=cfg)
 
+    cfg.evaluate_every_n_steps = 10
+
+    wandb.init(
+        project="self-prediction",
+    )
+    sweep_cfg = wandb.config
+    if "seed" in sweep_cfg:
+        cfg.seed = sweep_cfg.seed
+
     recipe = SelfPredictionTrainingRecipeDistributed(cfg=cfg)
     recipe.setup(cfg=cfg)
     recipe.train()
     recipe.cleanup()
+
+    wandb.finish()
 
 
 if __name__ == "__main__":
