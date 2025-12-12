@@ -6,6 +6,11 @@ checkpoints/
 test/
 rq-test/
 .ipynb_checkpoints/
+wandb/
+experiments/
+notebooks/
+sweeps/
+todo
 
 # Ignore caches
 *.pyc
@@ -16,3 +21,4 @@ rq-test/
 # Ignore logs
 *.err
 *.out
+*.pkl
