@@ -137,7 +137,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         # These are public properties which are updated by the checkpoint loader
         # when ``resume_from_checkpoint`` is `True` or validated in tests
         self.seed = training.set_seed(seed=cfg.seed)
-        seed_everything(self.seed)
+        # seed_everything(self.seed)
         self.epochs_run = 0
         self.total_epochs = cfg.epochs
         self.max_total_steps = cfg.max_total_steps
@@ -703,6 +703,7 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                 packed = True
 
         if packed_on_the_fly:
+            print('packed?',packed)
             dataloader = DataLoader(
                 dataset=ds,
                 batch_size=batch_size,

@@ -519,6 +519,7 @@ class LearningLevelsPFADataset(PFADataset):
                         transition_symbols[state][edge_exists] = outgoing_symbols
                 elif current_level == 3:
                     transition_probs, transition_symbols = self.generate_language()
+                    
 
                 language_sequences = []
                 # compute metadata for the language
@@ -560,6 +561,7 @@ class LearningLevelsPFADataset(PFADataset):
 
 
             # Perturbation
+            # perturb tokens vs perturb words?
             for i, seq in enumerate(language_sequences):
                 if torch.rand(1) > self.word_perturbation_rate:
                     perturbation.append(torch.zeros(len(seq) + 1, dtype=bool))
