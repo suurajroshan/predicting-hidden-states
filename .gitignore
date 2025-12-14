@@ -8,7 +8,6 @@ rq-test/
 .ipynb_checkpoints/
 wandb/
 experiments/
-notebooks/
 sweeps/
 todo
 
