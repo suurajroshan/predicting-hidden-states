@@ -143,7 +143,6 @@ def generate(prompt_tokens,
                 top_k=top_k,
                 stop_tokens=stop_tokens,
                 custom_generate_next_token=custom_generate_next_token,
-                only_return_log_probs=True
             )
     generated_tokens = generated_tokens[:, 1:]
 

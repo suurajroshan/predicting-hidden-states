@@ -505,13 +505,28 @@ class TransformerDecoder(nn.Module):
         else:
             self.decoder_max_cache_seq_len = self.max_seq_len
 
+        
         for layer in self.layers:
-            layer.setup_cache(
-                batch_size,
-                dtype,
-                encoder_max_seq_len=self.encoder_max_cache_seq_len,
-                decoder_max_seq_len=self.decoder_max_cache_seq_len,
+            layer.setup_caches(
+            batch_size,
+            dtype,
+            encoder_max_seq_len=self.encoder_max_cache_seq_len,
+            decoder_max_seq_len=self.decoder_max_cache_seq_len,
             )
+            # if hasattr(layer, "_checkpoint_wrapped_module"):
+            #     layer._checkpoint_wrapped_module.setup_cache(
+            #         batch_size,
+            #         dtype,
+            #         encoder_max_seq_len=self.encoder_max_cache_seq_len,
+            #         decoder_max_seq_len=self.decoder_max_cache_seq_len,
+            #     )
+            # else:
+            #     layer.setup_cache(
+            #         batch_size,
+            #         dtype,
+            #         encoder_max_seq_len=self.encoder_max_cache_seq_len,
+            #         decoder_max_seq_len=self.decoder_max_cache_seq_len,
+            #     )
 
     def caches_are_setup(self) -> bool:
         return self.encoder_max_cache_seq_len is not None

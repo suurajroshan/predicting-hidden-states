@@ -593,7 +593,7 @@ def evaluate_language_generation_length(recipe,
     previous_num_chunks = recipe._model.num_output_chunks
     recipe._model.num_output_chunks = 0
 
-    correct_lenghts = []
+    correct_lengths = []
     for i in range(0, num_samples, batch_size):
         recipe._model.reset_caches()
         recipe._model.self_prediction_losses.reset()
@@ -621,21 +621,21 @@ def evaluate_language_generation_length(recipe,
                 if seq_i == len(sequences_np) - 1:
                     # print(seq)
                     # print(f"{i + j + 1}/{num_samples}: {len_correct}/{len(seq)} correct")
-                    correct_lenghts.append(len_correct)
+                    correct_lengths.append(len_correct)
                 else:
                     assert accepted
 
-    correct_lenghts = np.array(correct_lenghts)
-    ci_mean, ci_lower, ci_higher = bootstrapped_mean_and_ci(correct_lenghts, num_samples=10000)
+    correct_lengths = np.array(correct_lengths)
+    ci_mean, ci_lower, ci_higher = bootstrapped_mean_and_ci(correct_lengths, num_samples=10000)
 
     delete_kv_caches(recipe._model)
     recipe._model.num_output_chunks = previous_num_chunks
 
     return {
-        "accepted_lengths": correct_lenghts.tolist(),
-        "mean": correct_lenghts.mean(),
-        "std": correct_lenghts.std(),
-        "std_err": correct_lenghts.std() / np.sqrt(correct_lenghts.size),
+        "accepted_lengths": correct_lengths.tolist(),
+        "mean": correct_lengths.mean(),
+        "std": correct_lengths.std(),
+        "std_err": correct_lengths.std() / np.sqrt(correct_lengths.size),
         "ci_mean": ci_mean,
         "ci_95": [ci_lower, ci_higher]
     }
@@ -798,8 +798,6 @@ def pfa_training_evaluation(recipe,
             xaxis=dict(tickvals=levels, ticktext=[level_names[l] for l in levels]),
         )
         plotly_figure_dict[loss] = fig
-
-
 
     recipe._model.train()
     eval_values_dict = {
