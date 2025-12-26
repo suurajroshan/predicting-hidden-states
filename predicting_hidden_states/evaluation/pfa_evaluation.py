@@ -691,9 +691,9 @@ def pfa_training_evaluation(recipe,
     losses = ["next_token_losses"]
     interestingness_criterion = "next_token_losses"
 
-    losses.append("phi_losses0",)
-    losses.append("latent_losses0",)
-    losses.append("latent_entropy0",)
+    losses.append("phi_losses",)
+    losses.append("latent_losses",)
+    losses.append("latent_entropy",)
 
     log.info(datapoints[0].keys())
     

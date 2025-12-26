@@ -3,9 +3,9 @@
 #SBATCH --partition=v100
 #SBATCH --gres=gpu:v100:1
 #SBATCH --time=20:00:00
-#SBATCH --array=0-2%4
-#SBATCH --error=slurm/logs/llama-0.1b-%j-%A.err
-#SBATCH --output=slurm/logs/llama-0.1b-%j-%A.out
+## #SBATCH --array=0-2%4
+#SBATCH --error=slurm/logs/llama-0.1b-%j.err
+#SBATCH --output=slurm/logs/llama-0.1b-%j.out
 
 unset SLURM_EXPORT_ENV
 
@@ -13,7 +13,7 @@ module load python
 conda activate hsp
 
 #define sweep values
-LATENT_LOSS=(1e-4 1e-5 1e-6)
+LATENT_LOSS=(0.0)
 combinations=()
 for lf in "${LATENT_LOSS[@]}"; do
   combinations+=("${lf}")
@@ -44,6 +44,6 @@ python exp_script.py \
     metric_logger.mode=online \
     config_file=$config_file \
     metric_logger.project="llama-0.1B-vae-sweep" \
-    metric_logger.name="llf-$llf" \
+    metric_logger.name="llf-$llf-target-detach" \
     model.latent_loss_factor=$llf \
     batch_size=8

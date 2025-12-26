@@ -1,8 +1,8 @@
 #!/bin/bash -l
 #
-#SBATCH --partition=a100
-#SBATCH --gres=gpu:a100:1
-#SBATCH --time=10:00:00
+#SBATCH --partition=v100
+#SBATCH --gres=gpu:v100:1
+#SBATCH --time=20:00:00
 ## #SBATCH --array=0-5%4
 #SBATCH --error=slurm/logs/llama-0.1b-%j.err
 #SBATCH --output=slurm/logs/llama-0.1b-%j.out
@@ -13,7 +13,7 @@ module load python
 conda activate hsp
 
 #define sweep values
-LATENT_LOSS=(1e-1 1e-2 1e-3 1e-4 1e-5 1e-6)
+LATENT_LOSS=(0.0)
 combinations=()
 for lf in "${LATENT_LOSS[@]}"; do
   combinations+=("${lf}")
@@ -42,7 +42,7 @@ config_file="configs/llama_0.1B_PHi_gumbel-quantizer.yaml"
 
 python exp_script.py \
     metric_logger.mode=online \
-    metric_logger.name="llf-$llf" \
+    metric_logger.name="llf-$llf-target-detach" \
     metric_logger.project="llama-0.1B-gumbel-sweep" \
     config_file=$config_file \
     model.self_critic_loss_factor=0.1 \

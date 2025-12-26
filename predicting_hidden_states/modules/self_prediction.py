@@ -165,6 +165,7 @@ class PHiLayer(torch.nn.Module):
 
         self.detach_hidden_states = detach_hidden_states
         self.detach_targets = detach_targets
+        # self.detach_predictions = True
         self.full_information_blockage = full_information_blockage
         self.chance_to_deterministic = chance_to_deterministic
         self.deterministic_at_inference = deterministic_at_inference
@@ -283,6 +284,20 @@ class PHiLayer(torch.nn.Module):
                 target_logvar = target_logvar.detach()
 
             target_padding_mask = padding_mask
+
+            # if self.detach_predictions:
+            #     prediction_mean_detached = prediction_mean.detach()
+            #     prediction_logvar_detached = prediction_logvar.detach()
+            #     phi_losses_pred_detach = gaussian_kl(
+            #         prediction_mean_detached,
+            #         prediction_logvar_detached,
+            #         target_mean,
+            #         target_logvar,
+            #     )
+            #     phi_losses_pred_detach = phi_losses_pred_detach * target_padding_mask
+            #     return_dict["tokenwise_phi_losses_posterior"] = phi_losses_pred_detach
+            #     loss = phi_losses_pred_detach.sum() / target_padding_mask.sum()
+            #     return_dict["phi_loss_posterior"] = loss * self.next_loss_factor
 
             if self.use_information_bottleneck:
                 phi_losses = gaussian_kl(

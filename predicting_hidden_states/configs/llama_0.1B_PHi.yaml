@@ -25,7 +25,7 @@ model:
   # PHi layer architecture and behavior
   use_self_attention: true # Whether the PHi prior uses self-attention
   detach_hidden_states: false # If true, detaches hidden states before the PHi layer
-  detach_targets: false # If true, detaches the posterior targets for the PHi loss
+  detach_targets: true # If true, detaches the posterior targets for the PHi loss
   
   # PHi layer behavior during training and inference
   deterministic_at_inference: false # If true, use the mean of the posterior instead of sampling at inference

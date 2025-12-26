@@ -1,8 +1,8 @@
 datasets==3.6.0
 einops==0.8.1
 huggingface_hub==1.0.0
-matplotlib==3.10.7
-numpy==2.3.5
+matplotlib==3.10.8
+numpy==2.4.0
 omegaconf==2.3.0
 plotly==6.1.0
 safetensors==0.7.0
