@@ -98,7 +98,7 @@ class GumbelQuantize(nn.Module):
 
         qy = F.softmax(logits, dim=2)
         # KL term from the ELBO with a uniform prior
-        diff = qy * torch.log(qy * self.num_embeddings + 1e-10)
+        diff = - torch.log(qy * self.num_embeddings + 1e-10) / qy
 
         return z_q, diff, ind
 
@@ -125,7 +125,8 @@ class ResidualQuantize(nn.Module):
         self.decoder = default(decoder_mlp, self._get_decoder())
 
     def _get_codes_and_indices(self, x, codebook_idx):
-        one_hot = F.gumbel_softmax(x, tau=self.temperature, dim=2, hard=True) # shape: (bsz, num_tokens, num_embeddings)
+        temperature = 1e-6 if not self.training else self.temperature
+        one_hot = F.gumbel_softmax(x, tau=temperature, dim=2, hard=True) # shape: (bsz, num_tokens, num_embeddings)
         z_q = einsum('b s n, n d -> b s d', one_hot, self.codebooks[codebook_idx].weight) # shape: (bsz, num_tokens, embedding_dim)
         ind = one_hot.argmax(dim=2)
         qy = F.softmax(x, dim=2)
@@ -133,6 +134,12 @@ class ResidualQuantize(nn.Module):
         # KL term from the ELBO with a uniform prior
         diff = qy * torch.log(qy * self.num_embeddings + 1e-10)
         return z_q, diff, ind
+
+    def get_entropy(self, x):
+        qy = F.softmax(x, dim=2)
+        entropy = - torch.sum(qy*torch.log(qy + 1e-10), dim=-1)
+        return entropy
+        
     
     def _get_decoder(self):
         shared_decoder = nn.Sequential(
@@ -170,10 +177,12 @@ class ResidualQuantize(nn.Module):
         
         indices = []
         latent_losses = []
+        entropies = []
         zs = []
         # TODO: modify posterior to handle both single module and module list 
         for i in range(self.num_quantizers):
             z = self.posteriors[0](residual)  # shape: (bsz, seq_len, num_embeddings)
+            entropy = self.get_entropy(z)
             z_q, latent_loss, ind = self._get_codes_and_indices(z, i)
 
             self.cache_zqs(z_q)
@@ -185,12 +194,14 @@ class ResidualQuantize(nn.Module):
             indices.append(ind)
             latent_losses.append(latent_loss)
             zs.append(z)
+            entropies.append(entropy)
         
         quantized_out = self.decoder(quantized_out)
         indices = torch.stack(indices, dim=0)
         latent_losses = torch.stack(latent_losses, dim=0)
         zs = torch.stack(zs, dim=0)
-        return quantized_out, latent_losses, indices, zs
+        entropies = torch.stack(entropies, dim=0)
+        return quantized_out, entropies, latent_losses, indices, zs
 
     @property
     def get_quantized_inputs(self):
@@ -582,7 +593,19 @@ def quantizer_module(self_prediction_information_bottleneck,
             'continuous': None,
         }[self_prediction_information_bottleneck]
 
-    if self_prediction_information_bottleneck == 'residual_quantize':
+    if self_prediction_information_bottleneck == 'gumbel_quantize':
+        codeword_dim = self_prediction_module['codeword_dim']
+        codebook_dim = self_prediction_module['codebook_dim']
+        embed_dim = codeword_dim  # override embed dim if using quantization
+        hidden_dim = codeword_dim * 8 // 3 # TODO: currrently a heuristic, can be parameterized later
+        print(f'number of embeddings: {codebook_dim}')
+        print(f'embedding dimension: {codeword_dim}')
+        posterior_mlp = encoder(codebook_dim, codeword_dim)
+        # decoder_mlp = decoder(codeword_dim, embed_dim)
+        decoder_mlp = decoder(codeword_dim, embed_dim)
+        quantizer_mlp = quantizer_module(codebook_dim, codeword_dim) #  shared_encoder_flag, shared_decoder_flag)
+
+    elif self_prediction_information_bottleneck == 'residual_quantize':
         codeword_dim = self_prediction_module['codeword_dim']
         codebook_dim = self_prediction_module['codebook_dim']
         num_quantizers = self_prediction_module["num_quantizers"]

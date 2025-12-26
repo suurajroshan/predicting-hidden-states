@@ -20,6 +20,7 @@ model:
   # Loss weights for the PHi mechanism
   phi_loss_factor: 0.001
   self_critic_loss_factor: 0.1
+  latent_loss_factor: 1e-8
 
   # PHi layer architecture and behavior
   use_self_attention: true # Whether the PHi prior uses self-attention
@@ -55,8 +56,8 @@ batch_size: 16
 # Training and Optimization
 # ----------------------------------------------------------------------------------
 # Training loop settings
-epochs: 100
-max_total_steps: 100000 # Stop training after this many global steps
+epochs: 1000
+max_total_steps: 30000 # Stop training after this many global steps
 max_steps_per_epoch: null # Optional: limit steps per epoch
 
 # Training mode
@@ -112,7 +113,7 @@ checkpointer:
   #   - model-00001-of-00002.safetensors
   #   - model-00002-of-00002.safetensors
   recipe_checkpoint: null
-  output_dir: /home/woody/iwbi/iwbi106h/suuraj/models/self-prediction-models/learning_levels_sweep_$WANDB_RUN_ID/
+  output_dir: /home/woody/iwbi/iwbi106h/suuraj/codes/predicting-hidden-states/predicting_hidden_states/checkpoints/llama_0.1B_PHi/llama_0.1B_PHi_$WANDB_RUN_ID/
   # output_dir: checkpoints/llama_3B_PHi_$WANDB_RUN_ID/
   model_type: IDSIA
 
@@ -136,4 +137,4 @@ metric_logger:
   # _component_: torchtune.training.metric_logging.DiskLogger  # use this if wandb is not installed
   project: self_prediction
   log_dir: ${output_dir}
-  mode: online
+  mode: disabled

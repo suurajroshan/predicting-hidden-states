@@ -27,6 +27,7 @@ model:
     shared_decoder: false
     reconstruction_loss_factor: 0.00001
     save_codebooks_for_qinco: true
+    save_every_n_steps: 1000
 
 
   # Loss weights for the PHi mechanism

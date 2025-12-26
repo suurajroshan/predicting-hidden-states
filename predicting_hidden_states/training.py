@@ -302,13 +302,13 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
         log.info(f'self critic loss factor: {cfg.model.self_critic_loss_factor}')
         if self.info_bottleneck == 'residual_quantize' or \
                 self.info_bottleneck == 'vector_quantize' or \
-                self.info_bottleneck == 'residual_quantize_qinco':
+                self.info_bottleneck == 'residual_quantize_qinco' or \
+                self.info_bottleneck == 'gumbel_quantize':
             log.info(f'reconstruction loss factor: {cfg.model.self_prediction_module.reconstruction_loss_factor}')
             self.get_temperature = config.instantiate(cfg.temperature_scheduler)
             self.reconstruction_loss_factor = cfg.model.self_prediction_module.reconstruction_loss_factor
             if self.info_bottleneck == 'vector_quantize':
                 self.get_beta = config.instantiate(cfg.beta_scheduler)
-        
         # initialize loss
         self._loss_fn = config.instantiate(cfg.loss)
 
@@ -959,7 +959,8 @@ class SelfPredictionTrainingRecipeDistributed(FTRecipeInterface):
                 # only assign temperature when using gumbel quantization
                 if self.info_bottleneck == 'residual_quantize' \
                         or self.info_bottleneck == 'vector_quantize' \
-                        or self.info_bottleneck == 'residual_quantize_qinco':
+                        or self.info_bottleneck == 'residual_quantize_qinco' \
+                        or self.info_bottleneck == 'gumbel_quantize':
                     self._model.self_prediction_layer.quantizer.temperature = self.get_temperature(self.global_step)
                     self._model.self_prediction_layer.reconstruction_loss_factor = self.reconstruction_loss_factor
                     if self.info_bottleneck == 'vector_quantize':

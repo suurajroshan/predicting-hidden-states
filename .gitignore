@@ -1,6 +1,6 @@
 # Ignore files used for debugging
 *_debug.*
-slurm/
+slurm/logs/
 tmp/
 checkpoints/
 test/
