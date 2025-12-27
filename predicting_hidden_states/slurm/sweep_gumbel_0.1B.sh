@@ -1,9 +1,9 @@
 #!/bin/bash -l
 #
-#SBATCH --partition=v100
-#SBATCH --gres=gpu:v100:1
-#SBATCH --time=20:00:00
-## #SBATCH --array=0-5%4
+#SBATCH --partition=a100
+#SBATCH --gres=gpu:a100:1
+#SBATCH --time=10:00:00
+#SBATCH --array=0-8%4
 #SBATCH --error=slurm/logs/llama-0.1b-%j.err
 #SBATCH --output=slurm/logs/llama-0.1b-%j.out
 
@@ -13,14 +13,16 @@ module load python
 conda activate hsp
 
 #define sweep values
-LATENT_LOSS=(0.0)
-combinations=()
-for lf in "${LATENT_LOSS[@]}"; do
-  combinations+=("${lf}")
+SEED=(42 43 44)
+LAYERS=(1 3 5)
+for s in "${SEED[@]}"; do
+  for l in "${LAYERS[@]}"; do
+    combinations+=("${s},${l}")
+  done
 done
 
 experiments="${combinations[$SLURM_ARRAY_TASK_ID]}"
-IFS=',' read -r llf <<< "$experiments"
+IFS=',' read -r s l <<< "$experiments"
 
 WORK_DIR=/home/woody/iwbi/iwbi106h/suuraj
 JOB_DIR=$WORK_DIR/slurm_scratch/llama-0.1B/$SLURM_JOB_ID
@@ -42,11 +44,14 @@ config_file="configs/llama_0.1B_PHi_gumbel-quantizer.yaml"
 
 python exp_script.py \
     metric_logger.mode=online \
-    metric_logger.name="llf-$llf-target-detach" \
-    metric_logger.project="llama-0.1B-gumbel-sweep" \
+    metric_logger.name="seed-$s-layer-$l" \
+    metric_logger.project="llama-0.1B-gumbel-layers" \
     config_file=$config_file \
+    seed=$s \
+    model.self_prediction_layer=$l \
+    model.detach_targets=true \
     model.self_critic_loss_factor=0.1 \
-    model.self_prediction_module.latent_loss_factor=$llf \
+    model.self_prediction_module.latent_loss_factor=0.0 \
     model.phi_loss_factor=0.001 \
     temperature_scheduler.temp_start=1 \
     temperature_scheduler.temp_end=0.2 \
