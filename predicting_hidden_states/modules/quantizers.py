@@ -248,6 +248,8 @@ class decoder(nn.Module):
         x = self.relu(x)
         return x
 
+        
+
 # ##### QINCO Quantizer #####
 # class QincoStep(nn.Module):
 #     def __init__(self, 
