@@ -2,7 +2,7 @@
 #
 #SBATCH --partition=a100
 #SBATCH --gres=gpu:a100:1
-#SBATCH --time=06:00:00
+#SBATCH --time=16:00:00
 #SBATCH --error=slurm/logs/llama0.1b-%j.err
 #SBATCH --output=slurm/logs/llama0.1b-%j.out
 
@@ -11,7 +11,7 @@ unset SLURM_EXPORT_ENV
 module load python
 conda activate hsp
 
-# train debugging script for llama 3B model
+# train debugging script for llama 0.1B model
 WORK_DIR=/home/woody/iwbi/iwbi106h/suuraj
 JOB_DIR=$WORK_DIR/slurm_scratch/$SLURM_JOB_ID
 mkdir -p $JOB_DIR
@@ -34,6 +34,7 @@ python exp_script.py \
     model.self_prediction_module.reconstruction_loss_factor=1e-5 \
     model.self_prediction_module.num_quantizers=2 \
     model.self_prediction_module.codebook_dim=64 \
+    model.self_prediction_module.latent_loss_factor=1e-4 \
     model.self_critic_loss_factor=0.1 \
     model.phi_loss_factor=0.001 \
     temperature_scheduler.temp_start=1 \

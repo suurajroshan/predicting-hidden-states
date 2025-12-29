@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #
-#SBATCH --partition=a100
-#SBATCH --gres=gpu:a100:1
+#SBATCH --partition=v100
+#SBATCH --gres=gpu:v100:1
 #SBATCH --time=24:00:00
 #SBATCH --array=0-2%4
 #SBATCH --error=slurm/logs/llama-0.1b-%A-%a.err
@@ -14,7 +14,7 @@ conda activate hsp
 
 define sweep values
 SEED=(40 42 44)
-LAYERS=(9)
+LAYERS=(5)
 for s in "${SEED[@]}"; do
   for l in "${LAYERS[@]}"; do
     combinations+=("${s},${l}")
@@ -40,20 +40,23 @@ rsync -av --exclude='__pycache__/' \
 cd $JOB_DIR
 printf "\nRunning job in $JOB_DIR\n"
 
-config_file="configs/llama_0.1B_PHi_gumbel-quantizer.yaml" 
+config_file='configs/llama_0.1B_PHi_residual-gumbel-quantizer.yaml'
 
 python exp_script.py \
     metric_logger.mode=online \
+    config_file=$config_file \
+    metric_logger.name="seed-$s-layer-$l-llf-1e-4" \
+    metric_logger.project="llama-0.1B-rq-layers" \
+    model.self_prediction_module.reconstruction_loss_factor=1e-5 \
+    model.self_prediction_module.num_quantizers=2 \
+    model.self_prediction_module.codebook_dim=64 \
+    model.self_critic_loss_factor=0.1 \
+    model.phi_loss_factor=0.001 \
+    model.self_prediction_module.latent_loss_factor=1e-4 \
     seed=$s \
     model.self_prediction_layer=$l \
-    metric_logger.name="seed-$s-layer-$l-llf-1e-4" \
-    metric_logger.project="llama-0.1B-gumbel-layers" \
-    config_file=$config_file \
-    model.detach_targets=true \
-    model.self_critic_loss_factor=0.1 \
-    model.self_prediction_module.latent_loss_factor=1e-4 \
-    model.phi_loss_factor=0.001 \
     temperature_scheduler.temp_start=1 \
     temperature_scheduler.temp_end=0.2 \
     temperature_scheduler.global_steps=10000 \
-    batch_size=8
+    batch_size=8 \
+    model.detach_targets=true \

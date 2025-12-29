@@ -21,7 +21,7 @@ model:
   # Configuration specific to the quantized PHi layer
   self_prediction_module:
     codeword_dim: 768
-    codebook_dim: 1024
+    codebook_dim: 4096
     num_quantizers: 1
     latent_loss_factor: 1e-8
     reconstruction_loss_factor: 0.00001

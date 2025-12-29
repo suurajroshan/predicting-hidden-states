@@ -1,8 +1,8 @@
 #!/bin/bash -l
 #
-#SBATCH --partition=v100
-#SBATCH --gres=gpu:v100:1
-#SBATCH --time=20:00:00
+#SBATCH --partition=a100
+#SBATCH --gres=gpu:a100:1
+#SBATCH --time=10:00:00
 ## #SBATCH --array=0-2%4
 #SBATCH --error=slurm/logs/llama-0.1b-%j.err
 #SBATCH --output=slurm/logs/llama-0.1b-%j.out
