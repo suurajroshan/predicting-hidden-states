@@ -180,7 +180,7 @@ def nl_learning_levels_evaluation(recipe, num_datapoints=500):
     """
     recipe._model.eval()
     dataset = languages_levels_eval_dataset(recipe._tokenizer,
-                                            location='/home/woody/iwbi/iwbi106h/suuraj/codes/predicting-hidden-states/data/natural_language_levels',)
+                                            location='/home/hpc/iwi5/iwi5368h/predicting-hidden-states/data/natural_language_levels',)
     datapoints = process_data(
         recipe,
         num_datapoints=num_datapoints,
@@ -190,13 +190,16 @@ def nl_learning_levels_evaluation(recipe, num_datapoints=500):
 
     losses = ["next_token_losses"]
     interestingness_criterion = "next_token_losses"
-    # if "phi_losses" in datapoints[0]:
-    #     losses.append("phi_losses")
-    #     interestingness_criterion = "phi_losses"
-    
-    # for i in range(recipe._model.self_prediction_layer.quantizer.num_quantizers):
-    #     losses.append(f"latent_loss{i}")
-    #     losses.append(f"phi_losses{i}")
+
+    if recipe._model.self_prediction_layer.quantizer is not None:
+        for i in range(recipe._model.self_prediction_layer.quantizer.num_quantizers):
+            losses.append(f"phi_losses{i}",)
+            losses.append(f"latent_losses{i}",)
+            losses.append(f"latent_entropy{i}",)
+    else:
+        losses.append("phi_losses")
+        losses.append("latent_losses")
+        losses.append("latent_entropy")
 
 
     levels = (0, 1, 2, 3, 4)

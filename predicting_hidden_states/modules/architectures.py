@@ -758,6 +758,7 @@ class TransformerDecoderPHi(TransformerDecoder):
             )
 
             if i == self.self_prediction_layer_position and self.self_prediction_layer is not None:
+                # print('inserting self prediction layer at position', i)
                 self_prediction_dict = self.self_prediction_layer(
                     h, padding_mask, mask=mask, input_pos=input_pos
                 )

@@ -1,0 +1,79 @@
+device: cuda
+dtype: bf16
+seed: null
+compile: false
+model:
+  _component_: models.llama3_ascii_self_prediction_0_1b
+  use_self_prediction: true
+  self_prediction_layer: 10
+  self_prediction_information_bottleneck: residual_quantize
+  self_prediction_module:
+    codeword_dim: 768
+    codebook_dim: 1024
+    num_quantizers: 1
+    latent_loss_factor: 1.0e-08
+    reconstruction_loss_factor: 1.0e-05
+    save_codebooks_for_qinco: false
+    save_every_n_steps: 500
+  phi_loss_factor: 0.001
+  self_critic_loss_factor: 0.1
+  use_self_attention: true
+  detach_hidden_states: false
+  detach_targets: false
+  deterministic_at_inference: false
+  chance_to_deterministic: 0.0
+train_from_scratch: true
+tokenizer:
+  _component_: models.ascii_tokenizer
+  max_seq_len: 2048
+dataset:
+  _component_: dataset_classes.learning_levels_pfa_dataset
+  packed_on_the_fly: true
+  packed_sequence_length: 2048
+  split_across_pack: false
+  num_workers: 0
+shuffle: true
+batch_size: 8
+epochs: 100
+max_total_steps: 30000
+max_steps_per_epoch: null
+train_whole_model: true
+ignore_main_training_loss: false
+optimizer:
+  _component_: torch.optim.AdamW
+  fused: true
+  lr: 0.0003
+lr_scheduler:
+  _component_: modules.get_constant_schedule_with_warmup
+  num_warmup_steps: 500
+temperature_scheduler:
+  _component_: modules.architectures.temperature_scheduler
+  global_steps: 10000
+  temp_start: 1
+  temp_end: 0.2
+loss:
+  _component_: torchtune.modules.loss.CEWithChunkedOutputLoss
+gradient_accumulation_steps: 1
+clip_grad_norm: 1.0
+fsdp_cpu_offload: false
+enable_activation_checkpointing: true
+checkpointer:
+  _component_: utils.checkpointer.FullModelTorchTuneCheckpointer
+  recipe_checkpoint: null
+  output_dir: experiments/llama_0.1B_PHi/learning_levels_sweep_$WANDB_RUN_ID/
+  model_type: IDSIA
+  checkpoint_dir: experiments/llama_0.1B_PHi/learning_levels_sweep_$WANDB_RUN_ID/
+resume_from_checkpoint: false
+checkpoint_every_n_steps: 100000
+overwrite_checkpoints: true
+save_optimizer_state: false
+evaluate_every_n_steps: 5
+output_dir: wandb_logs/
+log_every_n_steps: 5
+log_peak_memory_stats: false
+metric_logger:
+  _component_: torchtune.training.metric_logging.WandBLogger
+  project: self_prediction
+  log_dir: ${output_dir}
+  mode: disabled
+evaluate_n_datapoints: 50

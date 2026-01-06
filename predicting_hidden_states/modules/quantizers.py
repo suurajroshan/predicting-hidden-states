@@ -152,8 +152,8 @@ class ResidualQuantize(nn.Module):
 
     def _get_posteriors(self):
         posterior = nn.ModuleList([
-            nn.Sequential(encoder(self.dim, self.dim*2//3), 
-                          encoder(self.dim*2//3, self.num_embeddings),)
+            nn.Sequential(encoder(self.dim, self.dim*2), 
+                          encoder(self.dim*2, self.num_embeddings),)
             ])
         # for m in range(1, self.num_quantizers):
         #     posterior_m = nn.Sequential(

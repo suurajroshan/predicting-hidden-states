@@ -15,13 +15,10 @@ model:
   # These parameters configure the PHi layer integrated into the model
   use_self_prediction: true # Master switch to enable the PHi layer and its losses
   self_prediction_layer: 19 # Layer index *after which* the PHi layer is inserted
-  self_prediction_information_bottleneck: residual_quantize # either `continuous` / `quantized`
+  self_prediction_information_bottleneck: continuous # either `continuous` / `quantized`
+  
   # Configuration specific to the quantized PHi layer
-  self_prediction_module:
-    codeword_dim: 3072 # should be equal to the model dim
-    codebook_dim: 1024
-    num_quantizers: 2
-    reconstruction_loss_factor: 0.001
+  latent_loss_factor: 1e-4
 
   # Loss weights for the PHi mechanism
   phi_loss_factor: 1.0
@@ -40,7 +37,7 @@ train_from_scratch: false # If true, initializes a new model instead of loading 
 # Tokenizer configuration
 tokenizer:
   _component_: torchtune.models.llama3.llama3_tokenizer
-  path: /home/woody/iwbi/iwbi106h/suuraj/codes/predicting-hidden-states/predicting_hidden_states/checkpoints/llama3_tokenizer.model
+  path: /home/woody/iwi5/iwi5368h/llama3b/llama3_tokenizer.model
   max_seq_len: 2048
 
 # ----------------------------------------------------------------------------------
@@ -53,7 +50,7 @@ dataset:
   packed_sequence_length: 2048
   split_across_pack: false
   num_workers: 0
-  data_dir: /home/woody/iwbi/iwbi106h/suuraj/codes/predicting-hidden-states/data
+  data_dir: /home/hpc/iwi5/iwi5368h/predicting-hidden-states/data/
 shuffle: true # Whether to shuffle the dataset
 batch_size: 8
 
@@ -117,12 +114,12 @@ enable_activation_checkpointing: true
 # ----------------------------------------------------------------------------------
 checkpointer:
   _component_: utils.checkpointer.FullModelHFCheckpointer
-  checkpoint_dir: /home/woody/iwbi/iwbi106h/suuraj/codes/predicting-hidden-states/predicting_hidden_states/checkpoints/Llama-3.2-3B-Instruct
+  checkpoint_dir: /home/woody/iwi5/iwi5368h/llama3b/Llama-3.2-3B-Instruct
   checkpoint_files:
     - model-00001-of-00002.safetensors
     - model-00002-of-00002.safetensors
   recipe_checkpoint: null
-  output_dir: /home/woody/iwbi/iwbi106h/suuraj/codes/predicting-hidden-states/predicting_hidden_states/checkpoints/llama_3B_PHi/llama_3B_PHi_$WANDB_RUN_ID/
+  output_dir: /home/woody/iwi5/iwi5368h/models/llama_3B_PHi/learning_levels_sweep_$WANDB_RUN_ID/
   # output_dir: checkpoints/llama_3B_PHi_$WANDB_RUN_ID/
   model_type: LLAMA3_SELF_PREDICTION_QUANTIZED
 
@@ -137,7 +134,7 @@ save_optimizer_state: false # Whether to save optimizer state in checkpoints
 evaluate_every_n_steps: 500
 
 # Logging configuration
-output_dir: /home/woody/iwbi/iwbi106h/suuraj/wandb_logs # Fallback output directory
+output_dir: /home/woody/iwi5/iwi5368h/wandb_logs/ # Fallback output directory
 log_every_n_steps: 50
 log_peak_memory_stats: false
 

@@ -691,15 +691,17 @@ def pfa_training_evaluation(recipe,
     losses = ["next_token_losses"]
     interestingness_criterion = "next_token_losses"
 
-    losses.append("phi_losses0",)
-    losses.append("latent_losses0",)
-    losses.append("latent_entropy0",)
+    if recipe._model.self_prediction_layer.quantizer is not None:
+        for i in range(recipe._model.self_prediction_layer.quantizer.num_quantizers):
+            losses.append(f"phi_losses{i}",)
+            losses.append(f"latent_losses{i}",)
+            losses.append(f"latent_entropy{i}",)
+    else:
+        losses.append("phi_losses")
+        losses.append("latent_losses")
+        losses.append("latent_entropy")
 
     log.info(datapoints[0].keys())
-    
-    # if "phi_losses" in datapoints[0]:
-    #     losses.append("phi_losses")
-    #     interestingness_criterion = "phi_losses"
 
     level_names = [
         "memorized sequence",

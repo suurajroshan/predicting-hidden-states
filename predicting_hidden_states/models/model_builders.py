@@ -69,7 +69,7 @@ def llama3_ascii_self_prediction_0_1b(use_self_prediction=True,
         num_kv_heads=6,
         embed_dim=768,
         max_seq_len=max_seq_len,
-        intermediate_dim=768 * 8 // 3,
+        intermediate_dim=768 * 8 // 3, # 2048
         attn_dropout=0.0,
         norm_eps=1e-5,
         rope_base=500_000,
@@ -109,6 +109,7 @@ def llama3_2_selfprediction_3b(use_self_prediction=True,
                                use_information_bottleneck=True,
                                self_prediction_information_bottleneck='continuous',
                                 self_prediction_module=None,
+                                latent_loss_factor=None,
                                ) -> TransformerDecoderPHi:
     return llama3_phi(
         vocab_size=128_256,
@@ -138,4 +139,5 @@ def llama3_2_selfprediction_3b(use_self_prediction=True,
         use_information_bottleneck=use_information_bottleneck,
         self_prediction_information_bottleneck=self_prediction_information_bottleneck,
         self_prediction_module=self_prediction_module,
+        latent_loss_factor=latent_loss_factor,
     )

@@ -26,7 +26,7 @@ model:
     shared_encoder: false
     shared_decoder: false
     reconstruction_loss_factor: 0.00001
-    save_codebooks_for_qinco: true
+    save_codebooks_for_qinco: false
     save_every_n_steps: 1000
     latent_loss_factor: 0.0
 
@@ -128,7 +128,7 @@ checkpointer:
   #   - model-00001-of-00002.safetensors
   #   - model-00002-of-00002.safetensors
   recipe_checkpoint: null
-  output_dir: /home/woody/iwbi/iwbi106h/suuraj/models/self-prediction-models/learning_levels_sweep_$WANDB_RUN_ID/
+  output_dir: /home/woody/iwi5/iwi5368h/models/llama_3B_PHi/learning_levels_sweep_$WANDB_RUN_ID/
   # output_dir: checkpoints/llama_3B_PHi_$WANDB_RUN_ID/
   model_type: IDSIA
 
@@ -143,7 +143,7 @@ save_optimizer_state: false # Whether to save optimizer state in checkpoints
 evaluate_every_n_steps: 1000
 
 # Logging configuration
-output_dir: /home/woody/iwbi/iwbi106h/suuraj/wandb_logs # Fallback output directory
+output_dir: /home/woody/iwi5/iwi5368h/wandb_logs/ # Fallback output directory
 log_every_n_steps: 50
 log_peak_memory_stats: false
 

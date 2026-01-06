@@ -326,7 +326,7 @@ class PHiLayer(torch.nn.Module):
 
         else:
             # regular gumbel
-            # h_new, entropies, latent_losses, inds, zs = self.quantizer(h)
+            h_new, entropies, latent_losses, inds, zs = self.quantizer(h)
 
             # for i in range(self.quantizer.num_quantizers):
             #     wandb.log({"num unique idxs": len(set(inds[i].flatten().tolist()))})
@@ -336,162 +336,8 @@ class PHiLayer(torch.nn.Module):
             #         ind_hist, ind_bin_edges = np.histogram(inds[i].flatten().cpu().numpy(), bins=512, density=True)
             #         wandb.log({f"custom/ind hist{i}": wandb.Histogram(np_histogram=(ind_hist, ind_bin_edges))})
 
-            # # Loss term -> KL divergence of the uniform prior / do not train but good to observe
-            # #TODO: rewrite to handle multiple quantizers
-            # latent_losses = latent_losses.sum(-1)
-            # latent_losses = latent_losses * padding_mask
-            # for i in range(self.quantizer.num_quantizers):
-            #     return_dict[f"tokenwise_latent_losses{i}"] = latent_losses[i]
-            # latent_loss = latent_losses.sum() / padding_mask.sum()
-            # return_dict["latent_loss"] = latent_loss * self.latent_loss_factor
-            # entropy = entropies * padding_mask
-            # for i in range(self.quantizer.num_quantizers):
-            #     return_dict[f"tokenwise_latent_entropy{i}"] = entropy[i]
-            
-            # ### Self Critic Losses ###
-            # # TODO: rewrite to handle multiple quantizers
-            # for i in range(self.quantizer.num_quantizers):
-            #     ind_one_hot = F.one_hot(inds[i], num_classes=zs[i].size(-1))  # (batch, seq_len, num_codes)
-            #     self_critic_scores = torch.einsum('i s c, j s c -> i j s', zs[i], ind_one_hot.to(zs[i].dtype))  # (batch_z, batch_ind_one_hot, seq_len)
-            #     self_critic_scores = self_critic_scores.transpose(1, 2)  # (batch_z, seq_len, batch_ind_one_hot)
-            #     self_critic_targets = torch.arange(self_critic_scores.shape[2])[:, None].repeat(1, self_critic_scores.shape[1])  # (batch, seq_len)
-            #     self_critic_losses = F.cross_entropy(
-            #         self_critic_scores.reshape(-1, self_critic_scores.shape[-1]).float(),
-            #         self_critic_targets.flatten().to(zs.device),
-            #         reduction="none",
-            #     )
-            #     self_critic_losses = (self_critic_losses * padding_mask.flatten()).view_as(padding_mask)
-            #     return_dict[f"tokenwise_self_critic_loss{i}"] = self_critic_losses.reshape(-1, padding_mask.shape[1])
-            #     self_critic_loss = self_critic_losses.sum() / padding_mask.sum()
-            #     return_dict[f"self_critic_loss{i}"] = self_critic_loss * self.self_critic_loss_factor
-
-            # ### Self Prediction ################################################################
-            # # compute autoregressive prior based on the previous latent variables
-            # # TODO: the prediction has been modified to include additional term / CAREFUL for experiments
-            # # prediction_input = z_q
-            # # if self.prior_prediction_attention is not None:
-            # #     prediction_input = self.prior_prediction_attention(prediction_input, prediction_input,
-            # #                                                         mask=mask, input_pos=input_pos)
-            # # prediction_input = prediction_input[:, :-1]
-            # # prediction_input = torch.cat((self.initial_embedding.expand(prediction_input.shape[0], -1, -1),
-            # #                           prediction_input), dim=1)
-            # # prediction_z = self.prior_prediction_mlp(self.sa_norm(prediction_input))
-
-            # prediction_z = []
-            # prediction_input = self.quantizer.get_quantized_inputs # size: q, bsz, seq_len, dim
-            # if self.prior_prediction_attention is not None:
-            #     for i, prior_attn_layer in enumerate(self.prior_prediction_attention):
-            #         prediction_input_post_attn = prior_attn_layer(prediction_input[i], prediction_input[i],
-            #                                                         mask=mask, input_pos=input_pos)
-            #         prediction_shift = prediction_input_post_attn[:, :-1]
-            #         prediction_concat_parameter = torch.cat((self.initial_embedding.expand(prediction_input[i].shape[0], -1, -1),
-            #                           prediction_shift), dim=1)
-            #         prediction_z.append(self.prior_prediction_mlp(self.sa_norm[i](prediction_concat_parameter)))
-
-            # prediction_z = torch.stack(prediction_z) # [q, bsz, seq_len, num_embeddings]
-
-            # # Calculate PHi loss (KL divergence between prior(input) and posterior(target))
-            # target_z = zs
-            # if self.detach_targets:
-            #     target_z = target_z.detach()
-
-            # target_padding_mask = padding_mask
-
-            # categroical_input = F.log_softmax(prediction_z, dim=-1) # prior / log probs
-            # categorical_target = F.log_softmax(target_z, dim=-1) # posterior / log probs
-            # phi_losses = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)   
-
-            # # # entropy of targets
-            # # target_entropy = (-categorical_target.exp() * categorical_target).sum(dim=-1)
-            # # input_entropy = (-categroical_input.exp() * categroical_input).sum(dim=-1)
-            # # return_dict["tokenwise_phi_target_entropy"] = target_entropy
-            # # return_dict["tokenwise_phi_input_entropy"] = input_entropy
-
-            # phi_losses = phi_losses.sum(dim=-1) * target_padding_mask
-            # for i in range(self.quantizer.num_quantizers):
-            #     return_dict[f'tokenwise_phi_losses{i}'] = phi_losses[i]
-            # loss = phi_losses.sum() / target_padding_mask.sum()
-            # return_dict['phi_loss'] = loss * self.next_loss_factor
-            # # Two losses: 1. trains only the prior 2. trains only the posterior
-
-            # # 1. detach posterior ( train only the prior )
-            # # target_z = z
-            # # target_z = target_z.detach()
-
-            # # target_padding_mask = padding_mask
-
-            # # categroical_input = F.log_softmax(prediction_z, dim=-1) # prior / log probs
-            # # categorical_target = F.log_softmax(target_z, dim=-1) # posterior / log probs
-            # # phi_losses_prior = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)
-
-            # # phi_losses_prior = phi_losses_prior.sum(dim=-1) * target_padding_mask
-            # # return_dict['tokenwise_phi_losses_prior'] = phi_losses_prior 
-            # # loss = phi_losses_prior.sum() / target_padding_mask.sum()
-            # # return_dict['phi_loss_prior'] = loss * self.next_loss_factor
-
-            # # # 2. detach prior ( train only the posterior )
-            # # prediction_z_copy = prediction_z
-            # # prediction_z_copy = prediction_z_copy.detach()
-
-            # # categroical_input = F.log_softmax(prediction_z_copy, dim=-1)
-            # # categorical_target = F.log_softmax(z, dim=-1)
-            # # phi_losses_posterior = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)
-
-            # # phi_losses_posterior = phi_losses_posterior.sum(dim=-1) * target_padding_mask
-            # # return_dict['tokenwise_phi_losses_posterior'] = phi_losses_posterior
-            # # loss = phi_losses_posterior.sum() / target_padding_mask.sum()
-            # # return_dict['phi_loss_posterior'] = loss * self.next_loss_factor
-
-
-            # # log temperature
-            # if self.training:
-            #     return_dict["tokenwise_temperature"] = torch.ones(1)*self.quantizer.temperature
-
-            # # if self.decoder_mlp is not None:
-            # #     h_new = self.decoder_mlp(z_q)
-            # # else:
-            #     # h_new = z_q
-
-            # l2_norm = F.mse_loss(h, h_new, reduction='none').sum(dim=-1) * target_padding_mask
-            # return_dict["tokenwise_reconstruction_loss"] = l2_norm
-            # recon_loss = l2_norm.sum() / padding_mask.sum()
-            # return_dict["reconstruction_loss"] = recon_loss * self.reconstruction_loss_factor
-            # if self.straight_through_eval and not self.training:
-            #     h_new = h
-
-            # for i in range(self.quantizer.num_quantizers):
-            #     ind = inds[i]
-            #     encodings = F.one_hot(ind, self.quantizer.num_embeddings).float().reshape(-1, self.quantizer.num_embeddings)
-            #     avg_probs = encodings.mean(0)
-
-            #     #compute the codebook perplexity
-            #     perplexity = (-(avg_probs * torch.log(avg_probs + 1e-10)).sum()).exp() # exp(Entropy) = perplexity of a probabability distribution
-            #     cluster_use = torch.sum(avg_probs > 0)
-            #     return_dict[f"tokenwise_perplexity{i}"] = perplexity
-            #     return_dict[f"tokenwise_cluster_use{i}"] = cluster_use
-
-            # return_dict["h"] = h_new
-            # return return_dict
-            
-            # # normal rvq
-            h_new, entropies, latent_losses, inds, zs = self.quantizer(h)
-
-            target_padding_mask = padding_mask
-            # for i in range(self.quantizer.num_quantizers):
-            #     wandb.log({"num unique idxs": len(set(inds[i].flatten().tolist()))})
-
-            # if self.log_hist:
-            #     for i in range(self.quantizer.num_quantizers):
-            #         ind_hist, ind_bin_edges = np.histogram(inds[i].flatten().cpu().numpy(), bins=512, density=True)
-            #         wandb.log({f"custom/ind hist{i}": wandb.Histogram(np_histogram=(ind_hist, ind_bin_edges))})
-
-            # Reconstruction loss
-            l2_norm = F.mse_loss(h, h_new, reduction='none').sum(dim=-1) * target_padding_mask
-            return_dict["tokenwise_reconstruction_loss"] = l2_norm
-            recon_loss = l2_norm.sum() / padding_mask.sum()
-            return_dict["reconstruction_loss"] = recon_loss * self.reconstruction_loss_factor
-            
             # Loss term -> KL divergence of the uniform prior / do not train but good to observe
+            #TODO: rewrite to handle multiple quantizers
             latent_losses = latent_losses.sum(-1)
             latent_losses = latent_losses * padding_mask
             for i in range(self.quantizer.num_quantizers):
@@ -501,27 +347,23 @@ class PHiLayer(torch.nn.Module):
             entropy = entropies * padding_mask
             for i in range(self.quantizer.num_quantizers):
                 return_dict[f"tokenwise_latent_entropy{i}"] = entropy[i]
-
+            
             ### Self Critic Losses ###
             # TODO: rewrite to handle multiple quantizers
-
-            ind_one_hot = F.one_hot(inds, num_classes=zs.size(-1))  # (batch, seq_len, num_codes)
-            self_critic_scores = torch.einsum('q i s c, q j s c -> q i j s', zs, ind_one_hot.to(zs.dtype))  # (batch_z, batch_ind_one_hot, seq_len)
-            self_critic_scores = self_critic_scores.transpose(2, 3)  # (batch_z, seq_len, batch_ind_one_hot)
-            self_critic_targets = torch.arange(self_critic_scores.shape[3])[:, None].repeat(self_critic_scores.shape[0], 1, self_critic_scores.shape[2])  # (batch, seq_len)
-            self_critic_losses = F.cross_entropy(
-                self_critic_scores.reshape(-1, self_critic_scores.shape[-1]).float(),
-                self_critic_targets.flatten().to(zs.device),
-                reduction="none",
-            )
-            self_critic_losses = (self_critic_losses * repeat(padding_mask, 
-                                                              '... -> n ...', 
-                                                              n=self.quantizer.num_quantizers).flatten()).view_as(repeat(padding_mask, 
-                                                                                                                        '... -> n ...', 
-                                                                                                                        n=self.quantizer.num_quantizers))
-            return_dict["tokenwise_self_critic_loss"] = self_critic_losses
-            self_critic_loss = self_critic_losses.sum() / padding_mask.sum()
-            return_dict["self_critic_loss"] = self_critic_loss * self.self_critic_loss_factor
+            for i in range(self.quantizer.num_quantizers):
+                ind_one_hot = F.one_hot(inds[i], num_classes=zs[i].size(-1))  # (batch, seq_len, num_codes)
+                self_critic_scores = torch.einsum('i s c, j s c -> i j s', zs[i], ind_one_hot.to(zs[i].dtype))  # (batch_z, batch_ind_one_hot, seq_len)
+                self_critic_scores = self_critic_scores.transpose(1, 2)  # (batch_z, seq_len, batch_ind_one_hot)
+                self_critic_targets = torch.arange(self_critic_scores.shape[2])[:, None].repeat(1, self_critic_scores.shape[1])  # (batch, seq_len)
+                self_critic_losses = F.cross_entropy(
+                    self_critic_scores.reshape(-1, self_critic_scores.shape[-1]).float(),
+                    self_critic_targets.flatten().to(zs.device),
+                    reduction="none",
+                )
+                self_critic_losses = (self_critic_losses * padding_mask.flatten()).view_as(padding_mask)
+                return_dict[f"tokenwise_self_critic_loss{i}"] = self_critic_losses.reshape(-1, padding_mask.shape[1])
+                self_critic_loss = self_critic_losses.sum() / padding_mask.sum()
+                return_dict[f"self_critic_loss{i}"] = self_critic_loss * self.self_critic_loss_factor
 
             ### Self Prediction ################################################################
             # compute autoregressive prior based on the previous latent variables
@@ -545,51 +387,49 @@ class PHiLayer(torch.nn.Module):
                     prediction_concat_parameter = torch.cat((self.initial_embedding.expand(prediction_input[i].shape[0], -1, -1),
                                       prediction_shift), dim=1)
                     prediction_z.append(self.prior_prediction_mlp(self.sa_norm[i](prediction_concat_parameter)))
-            
+
             prediction_z = torch.stack(prediction_z) # [q, bsz, seq_len, num_embeddings]
 
             # Calculate PHi loss (KL divergence between prior(input) and posterior(target))
-            # target_z = zs
-            # if self.detach_targets:
-            #     target_z = target_z.detach()
-            
-            # target_padding_mask = padding_mask
+            target_z = zs
+            if self.detach_targets:
+                target_z = target_z.detach()
 
-            # categroical_input = F.log_softmax(prediction_z, dim=-1) # prior / log probs
-            # categorical_target = F.log_softmax(target_z, dim=-1) # posterior / log probs
-            # phi_losses = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)   
-            
+            target_padding_mask = padding_mask
+
+            categroical_input = F.log_softmax(prediction_z, dim=-1) # prior / log probs
+            categorical_target = F.log_softmax(target_z, dim=-1) # posterior / log probs
+            phi_losses = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)   
+
             # # entropy of targets
             # target_entropy = (-categorical_target.exp() * categorical_target).sum(dim=-1)
             # input_entropy = (-categroical_input.exp() * categroical_input).sum(dim=-1)
             # return_dict["tokenwise_phi_target_entropy"] = target_entropy
             # return_dict["tokenwise_phi_input_entropy"] = input_entropy
-            
-            # phi_losses = phi_losses.sum(dim=-1) * target_padding_mask
-            # for i in range(self.quantizer.num_quantizers):
-            #     return_dict[f'tokenwise_phi_losses{i}'] = phi_losses[i]
-            # loss = phi_losses.sum() / target_padding_mask.sum()
-            # return_dict['phi_loss'] = loss * self.next_loss_factor
-            # Two losses: 1. trains only the prior 2. trains only the posterior
-            
-            # 1. detach posterior ( train only the prior )
-            target_z = zs
-            target_z = target_z.detach()
-            
-            target_padding_mask = padding_mask
 
-            categroical_input = F.log_softmax(prediction_z, dim=-1) # prior / log probs
-            categorical_target = F.log_softmax(target_z, dim=-1) # posterior / log probs
-            phi_losses_prior = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)
-            
-            phi_losses_prior = phi_losses_prior.sum(dim=-1) * target_padding_mask
+            phi_losses = phi_losses.sum(dim=-1) * target_padding_mask
             for i in range(self.quantizer.num_quantizers):
-                return_dict[f'tokenwise_phi_losses{i}'] = phi_losses_prior[i]
-            # return_dict['tokenwise_phi_losses'] = phi_losses_prior 
-            loss = phi_losses_prior.sum() / target_padding_mask.sum()
+                return_dict[f'tokenwise_phi_losses{i}'] = phi_losses[i]
+            loss = phi_losses.sum() / target_padding_mask.sum()
             return_dict['phi_loss'] = loss * self.next_loss_factor
+            # Two losses: 1. trains only the prior 2. trains only the posterior
 
-            # 2. detach prior ( train only the posterior )
+            # 1. detach posterior ( train only the prior )
+            # target_z = z
+            # target_z = target_z.detach()
+
+            # target_padding_mask = padding_mask
+
+            # categroical_input = F.log_softmax(prediction_z, dim=-1) # prior / log probs
+            # categorical_target = F.log_softmax(target_z, dim=-1) # posterior / log probs
+            # phi_losses_prior = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)
+
+            # phi_losses_prior = phi_losses_prior.sum(dim=-1) * target_padding_mask
+            # return_dict['tokenwise_phi_losses_prior'] = phi_losses_prior 
+            # loss = phi_losses_prior.sum() / target_padding_mask.sum()
+            # return_dict['phi_loss_prior'] = loss * self.next_loss_factor
+
+            # # 2. detach prior ( train only the posterior )
             # prediction_z_copy = prediction_z
             # prediction_z_copy = prediction_z_copy.detach()
 
@@ -598,12 +438,24 @@ class PHiLayer(torch.nn.Module):
             # phi_losses_posterior = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)
 
             # phi_losses_posterior = phi_losses_posterior.sum(dim=-1) * target_padding_mask
-            # for i in range(self.quantizer.num_quantizers):
-            #     return_dict[f'tokenwise_phi_losses{i}'] = phi_losses[i]
             # return_dict['tokenwise_phi_losses_posterior'] = phi_losses_posterior
             # loss = phi_losses_posterior.sum() / target_padding_mask.sum()
-            # return_dict['phi_loss_posterior'] = loss * self.next_loss_factor.posterior
-            
+            # return_dict['phi_loss_posterior'] = loss * self.next_loss_factor
+
+
+            # log temperature
+            if self.training:
+                return_dict["tokenwise_temperature"] = torch.ones(1)*self.quantizer.temperature
+
+            # if self.decoder_mlp is not None:
+            #     h_new = self.decoder_mlp(z_q)
+            # else:
+                # h_new = z_q
+
+            l2_norm = F.mse_loss(h, h_new, reduction='none').sum(dim=-1) * target_padding_mask
+            return_dict["tokenwise_reconstruction_loss"] = l2_norm
+            recon_loss = l2_norm.sum() / padding_mask.sum()
+            return_dict["reconstruction_loss"] = recon_loss * self.reconstruction_loss_factor
             if self.straight_through_eval and not self.training:
                 h_new = h
 
@@ -611,7 +463,7 @@ class PHiLayer(torch.nn.Module):
                 ind = inds[i]
                 encodings = F.one_hot(ind, self.quantizer.num_embeddings).float().reshape(-1, self.quantizer.num_embeddings)
                 avg_probs = encodings.mean(0)
-                
+
                 #compute the codebook perplexity
                 perplexity = (-(avg_probs * torch.log(avg_probs + 1e-10)).sum()).exp() # exp(Entropy) = perplexity of a probabability distribution
                 cluster_use = torch.sum(avg_probs > 0)
@@ -620,6 +472,154 @@ class PHiLayer(torch.nn.Module):
 
             return_dict["h"] = h_new
             return return_dict
+            
+            # # normal rvq
+            # h_new, entropies, latent_losses, inds, zs = self.quantizer(h)
+
+            # target_padding_mask = padding_mask
+            # # for i in range(self.quantizer.num_quantizers):
+            # #     wandb.log({"num unique idxs": len(set(inds[i].flatten().tolist()))})
+
+            # # if self.log_hist:
+            # #     for i in range(self.quantizer.num_quantizers):
+            # #         ind_hist, ind_bin_edges = np.histogram(inds[i].flatten().cpu().numpy(), bins=512, density=True)
+            # #         wandb.log({f"custom/ind hist{i}": wandb.Histogram(np_histogram=(ind_hist, ind_bin_edges))})
+
+            # # Reconstruction loss
+            # l2_norm = F.mse_loss(h, h_new, reduction='none').sum(dim=-1) * target_padding_mask
+            # return_dict["tokenwise_reconstruction_loss"] = l2_norm
+            # recon_loss = l2_norm.sum() / padding_mask.sum()
+            # return_dict["reconstruction_loss"] = recon_loss * self.reconstruction_loss_factor
+            
+            # # Loss term -> KL divergence of the uniform prior / do not train but good to observe
+            # latent_losses = latent_losses.sum(-1)
+            # latent_losses = latent_losses * padding_mask
+            # for i in range(self.quantizer.num_quantizers):
+            #     return_dict[f"tokenwise_latent_losses{i}"] = latent_losses[i]
+            # latent_loss = latent_losses.sum() / padding_mask.sum()
+            # return_dict["latent_loss"] = latent_loss * self.latent_loss_factor
+            # entropy = entropies * padding_mask
+            # for i in range(self.quantizer.num_quantizers):
+            #     return_dict[f"tokenwise_latent_entropy{i}"] = entropy[i]
+
+            # ### Self Critic Losses ###
+            # # TODO: rewrite to handle multiple quantizers
+
+            # ind_one_hot = F.one_hot(inds, num_classes=zs.size(-1))  # (batch, seq_len, num_codes)
+            # self_critic_scores = torch.einsum('q i s c, q j s c -> q i j s', zs, ind_one_hot.to(zs.dtype))  # (batch_z, batch_ind_one_hot, seq_len)
+            # self_critic_scores = self_critic_scores.transpose(2, 3)  # (batch_z, seq_len, batch_ind_one_hot)
+            # self_critic_targets = torch.arange(self_critic_scores.shape[3])[:, None].repeat(self_critic_scores.shape[0], 1, self_critic_scores.shape[2])  # (batch, seq_len)
+            # self_critic_losses = F.cross_entropy(
+            #     self_critic_scores.reshape(-1, self_critic_scores.shape[-1]).float(),
+            #     self_critic_targets.flatten().to(zs.device),
+            #     reduction="none",
+            # )
+            # self_critic_losses = (self_critic_losses * repeat(padding_mask, 
+            #                                                   '... -> n ...', 
+            #                                                   n=self.quantizer.num_quantizers).flatten()).view_as(repeat(padding_mask, 
+            #                                                                                                             '... -> n ...', 
+            #                                                                                                             n=self.quantizer.num_quantizers))
+            # return_dict["tokenwise_self_critic_loss"] = self_critic_losses
+            # self_critic_loss = self_critic_losses.sum() / padding_mask.sum()
+            # return_dict["self_critic_loss"] = self_critic_loss * self.self_critic_loss_factor
+
+            # ### Self Prediction ################################################################
+            # # compute autoregressive prior based on the previous latent variables
+            # # TODO: the prediction has been modified to include additional term / CAREFUL for experiments
+            # # prediction_input = z_q
+            # # if self.prior_prediction_attention is not None:
+            # #     prediction_input = self.prior_prediction_attention(prediction_input, prediction_input,
+            # #                                                         mask=mask, input_pos=input_pos)
+            # # prediction_input = prediction_input[:, :-1]
+            # # prediction_input = torch.cat((self.initial_embedding.expand(prediction_input.shape[0], -1, -1),
+            # #                           prediction_input), dim=1)
+            # # prediction_z = self.prior_prediction_mlp(self.sa_norm(prediction_input))
+
+            # prediction_z = []
+            # prediction_input = self.quantizer.get_quantized_inputs # size: q, bsz, seq_len, dim
+            # if self.prior_prediction_attention is not None:
+            #     for i, prior_attn_layer in enumerate(self.prior_prediction_attention):
+            #         prediction_input_post_attn = prior_attn_layer(prediction_input[i], prediction_input[i],
+            #                                                         mask=mask, input_pos=input_pos)
+            #         prediction_shift = prediction_input_post_attn[:, :-1]
+            #         prediction_concat_parameter = torch.cat((self.initial_embedding.expand(prediction_input[i].shape[0], -1, -1),
+            #                           prediction_shift), dim=1)
+            #         prediction_z.append(self.prior_prediction_mlp(self.sa_norm[i](prediction_concat_parameter)))
+            
+            # prediction_z = torch.stack(prediction_z) # [q, bsz, seq_len, num_embeddings]
+
+            # # Calculate PHi loss (KL divergence between prior(input) and posterior(target))
+            # # target_z = zs
+            # # if self.detach_targets:
+            # #     target_z = target_z.detach()
+            
+            # # target_padding_mask = padding_mask
+
+            # # categroical_input = F.log_softmax(prediction_z, dim=-1) # prior / log probs
+            # # categorical_target = F.log_softmax(target_z, dim=-1) # posterior / log probs
+            # # phi_losses = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)   
+            
+            # # # entropy of targets
+            # # target_entropy = (-categorical_target.exp() * categorical_target).sum(dim=-1)
+            # # input_entropy = (-categroical_input.exp() * categroical_input).sum(dim=-1)
+            # # return_dict["tokenwise_phi_target_entropy"] = target_entropy
+            # # return_dict["tokenwise_phi_input_entropy"] = input_entropy
+            
+            # # phi_losses = phi_losses.sum(dim=-1) * target_padding_mask
+            # # for i in range(self.quantizer.num_quantizers):
+            # #     return_dict[f'tokenwise_phi_losses{i}'] = phi_losses[i]
+            # # loss = phi_losses.sum() / target_padding_mask.sum()
+            # # return_dict['phi_loss'] = loss * self.next_loss_factor
+            # # Two losses: 1. trains only the prior 2. trains only the posterior
+            
+            # # 1. detach posterior ( train only the prior )
+            # target_z = zs
+            # target_z = target_z.detach()
+            
+            # target_padding_mask = padding_mask
+
+            # categroical_input = F.log_softmax(prediction_z, dim=-1) # prior / log probs
+            # categorical_target = F.log_softmax(target_z, dim=-1) # posterior / log probs
+            # phi_losses_prior = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)
+            
+            # phi_losses_prior = phi_losses_prior.sum(dim=-1) * target_padding_mask
+            # for i in range(self.quantizer.num_quantizers):
+            #     return_dict[f'tokenwise_phi_losses{i}'] = phi_losses_prior[i]
+            # # return_dict['tokenwise_phi_losses'] = phi_losses_prior 
+            # loss = phi_losses_prior.sum() / target_padding_mask.sum()
+            # return_dict['phi_loss'] = loss * self.next_loss_factor
+
+            # # 2. detach prior ( train only the posterior )
+            # # prediction_z_copy = prediction_z
+            # # prediction_z_copy = prediction_z_copy.detach()
+
+            # # categroical_input = F.log_softmax(prediction_z_copy, dim=-1)
+            # # categorical_target = F.log_softmax(z, dim=-1)
+            # # phi_losses_posterior = F.kl_div(categroical_input, categorical_target, reduction='none', log_target=True)
+
+            # # phi_losses_posterior = phi_losses_posterior.sum(dim=-1) * target_padding_mask
+            # # for i in range(self.quantizer.num_quantizers):
+            # #     return_dict[f'tokenwise_phi_losses{i}'] = phi_losses[i]
+            # # return_dict['tokenwise_phi_losses_posterior'] = phi_losses_posterior
+            # # loss = phi_losses_posterior.sum() / target_padding_mask.sum()
+            # # return_dict['phi_loss_posterior'] = loss * self.next_loss_factor.posterior
+            
+            # if self.straight_through_eval and not self.training:
+            #     h_new = h
+
+            # for i in range(self.quantizer.num_quantizers):
+            #     ind = inds[i]
+            #     encodings = F.one_hot(ind, self.quantizer.num_embeddings).float().reshape(-1, self.quantizer.num_embeddings)
+            #     avg_probs = encodings.mean(0)
+                
+            #     #compute the codebook perplexity
+            #     perplexity = (-(avg_probs * torch.log(avg_probs + 1e-10)).sum()).exp() # exp(Entropy) = perplexity of a probabability distribution
+            #     cluster_use = torch.sum(avg_probs > 0)
+            #     return_dict[f"tokenwise_perplexity{i}"] = perplexity
+            #     return_dict[f"tokenwise_cluster_use{i}"] = cluster_use
+
+            # return_dict["h"] = h_new
+            # return return_dict
 
 
 

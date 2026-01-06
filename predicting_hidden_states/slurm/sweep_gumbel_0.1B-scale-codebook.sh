@@ -1,9 +1,9 @@
 #!/bin/bash -l
 #
-#SBATCH --partition=v100
-#SBATCH --gres=gpu:v100:1
+#SBATCH --partition=a100
+#SBATCH --gres=gpu:a100:1
 #SBATCH --time=24:00:00
-#SBATCH --array=0-2%4
+#SBATCH --array=0-4%8
 #SBATCH --error=slurm/logs/llama-0.1b-%A_%a.err
 #SBATCH --output=slurm/logs/llama-0.1b-%A_%a.out
 
@@ -13,16 +13,13 @@ module load python
 conda activate hsp
 
 # define sweep values
-SEED=(42)
-LAYERS=(7)
-for s in "${SEED[@]}"; do
-  for l in "${LAYERS[@]}"; do
-    combinations+=("${s},${l}")
-  done
+CODEBOOK_DIM=(768 1024 2048 4096 8192)
+for cbd in "${CODEBOOK_DIM[@]}"; do
+  combinations+=("${cbd}")
 done
 
 experiments="${combinations[$SLURM_ARRAY_TASK_ID]}"
-IFS=',' read -r s l <<< "$experiments"
+IFS=',' read -r cbd <<< "$experiments"
 
 JOB_DIR=/home/woody/iwi5/iwi5368h/slurm_scratch/llama-0.1B/$SLURM_JOB_ID
 mkdir -p $JOB_DIR
@@ -43,14 +40,13 @@ config_file="configs/llama_0.1B_PHi_gumbel-quantizer.yaml"
 
 python exp_script.py \
     metric_logger.mode=online \
-    seed=$s \
-    model.self_prediction_layer=$l \
-    metric_logger.name="seed-$s-layer-$l-llf-1e-4" \
-    metric_logger.project="llama-0.1B-gumbel-layers" \
+    metric_logger.name="cbDim-$cbd-llf-1e-4" \
+    metric_logger.project="llama-0.1-gumbel-scaling-codebook" \
     config_file=$config_file \
     model.detach_targets=true \
     model.self_critic_loss_factor=0.1 \
     model.self_prediction_module.latent_loss_factor=1e-4 \
+    model.self_prediction_module.codebook_dim=$cbd \
     model.phi_loss_factor=0.001 \
     temperature_scheduler.temp_start=1 \
     temperature_scheduler.temp_end=0.2 \

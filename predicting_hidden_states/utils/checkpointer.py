@@ -713,7 +713,8 @@ class FullModelHFCheckpointer(_CheckpointerInterface):
                 head_dim=self._config.get("head_dim", None),
             )
 
-        if self._model_type == ModelType.LLAMA3_SELF_PREDICTION and self._self_prediction_checkpoint_path:
+        if (self._model_type == ModelType.LLAMA3_SELF_PREDICTION or
+            self._model_type == ModelType.LLAMA3_SELF_PREDICTION_QUANTIZED) and self._self_prediction_checkpoint_path:
             self_prediction_state_dict = safe_torch_load(
                 self._self_prediction_checkpoint_path
             )
